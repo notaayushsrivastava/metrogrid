@@ -19,8 +19,8 @@ CITY STATE  →  SIMULATION  →  SCORES  →  VISUALIZATION      (PRD §31)
 metrogrid/
 ├── backend/                  # FastAPI + Pydantic (Python 3.10+)
 │   ├── app/
-│   │   ├── main.py           # /api/health, /api/calculate, /api/gis/import, CORS, errors
-│   │   ├── config.py         # ALL scoring + GIS constants centralized (PRD §21)
+│   │   ├── main.py           # /api/health, /api/calculate, /api/gis/import, /api/assets/upload, CORS, errors
+│   │   ├── config.py         # ALL scoring + GIS + asset constants centralized (PRD §21)
 │   │   ├── models/           # Tile types + API + GIS contracts (PRD §5, §7, §12)
 │   │   └── services/
 │   │       ├── scoring.py    # aggregation, normalization, local delta
@@ -30,19 +30,22 @@ metrogrid/
 │   │       ├── geometry.py   # Manhattan distance
 │   │       ├── rasterizer.py # deterministic lat/lon→grid rasterization (PRD §7.4-7.5)
 │   │       ├── gis.py        # configured GIS pipeline (Overpass/OSM + sample)
+│   │       ├── assets.py     # 3D-model upload → Supabase Storage (PRD §12.3)
 │   │       └── sparse.py     # "x,y" sparse map parsing/serialization
 │   └── tests/                # pytest: scoring, A*, API, PRD §25.3 flow
-└── frontend/                 # React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui
+└── frontend/                 # React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui + R3F
     └── src/
         ├── state/cityState.ts        # authoritative sparse Map state
         ├── services/api.ts           # backend client (backend is authoritative)
         ├── utils/coordinates.ts      # screen↔grid via getBoundingClientRect
         ├── utils/gis.ts              # client-side bounds validation + merge policy
         ├── lib/motion.ts             # restrained anime.js micro-interactions
+        ├── lib/alpine.ts             # Alpine.js status-bar island (zero-render ticker)
+        ├── hooks/useTheme.ts         # dark/light theme state + persistence
         ├── config/                   # tile + score-threshold tokens (once)
         ├── types/spatial.ts          # spatial extension types (freeform roads, models)
-        ├── components/ui/            # shadcn/ui primitives (Button, Sheet, Tooltip…)
-        └── components/               # CityCanvas, TilePalette, Dashboard, GISImport
+        ├── components/ui/            # shadcn/ui primitives (Button, Sheet, Dialog…)
+        └── components/               # CityCanvas, CityCanvas3D, TilePalette, Dashboard, GISImport
 ```
 
 - **Authoritative city state** is a sparse `Map<string, TileObject>` keyed by
@@ -163,5 +166,9 @@ Roads: `5` Local, `6` Transit, `7` Highway
       offline sample provider, compact Leaflet bbox picker, premium minimal UI
       (shadcn/ui, anime.js micro-interactions), spatial extension types for
       future freeform roads / oriented models; 131 backend + 30 frontend tests
-- [ ] **Phase 5** — optional 3D (`.glb`/`.gltf`, React Three Fiber)
+- [x] **Phase 5** — optional 3D visualization (PRD §16): React Three Fiber
+      canvas with instanced tile meshes + lazy GLTF/GLB loading (error-boundary
+      fallback, never corrupts state); `POST /api/assets/upload` → Supabase
+      Storage with magic-byte type verification + 25 MB cap; 2D/3D view toggle;
+      model upload + arm-for-placement workflow; 139 backend + 30 frontend tests
 - [ ] **Phase 6** — polish, a11y audit, demo seed city

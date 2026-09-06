@@ -7,10 +7,11 @@
  */
 
 import { useEffect, lazy, useRef, Suspense, useState } from "react";
-import { MapPlus, Sun, Moon, Grid3x3 } from "lucide-react";
+import { MapPlus, Sun, Moon, Grid3x3, Box } from "lucide-react";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
+import { ModelUpload } from "./components/ModelUpload/ModelUpload";
 import { SaveLoadPanel } from "./components/SaveLoadPanel/SaveLoadPanel";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TilePalette } from "./components/TilePalette/TilePalette";
@@ -28,8 +29,13 @@ import { useTheme } from "./hooks/useTheme";
 import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
 
-// GIS import pulls in Leaflet + anime.js — lazy-load so the initial planner
-// (canvas + scoring) stays lean (PRD Phase 4: performance-conscious rendering).
+// 3D view pulls in three.js + R3F — lazy-load so the initial planner
+// (canvas + scoring) stays lean (PRD Phase 5: 3D must not block the core loop).
+const CityCanvas3D = lazy(() =>
+  import("./components/CityCanvas3D/CityCanvas3D").then((m) => ({
+    default: m.CityCanvas3D,
+  }))
+);
 const GisImportPanel = lazy(() =>
   import("./components/GISImport/GisImportPanel").then((m) => ({
     default: m.GisImportPanel,
@@ -66,8 +72,13 @@ export default function App() {
   const tool = toolById(state.tool);
   const [gisOpen, setGisOpen] = useState(false);
   const [clearOpen, setClearOpen] = useState(false);
+  const [view3d, setView3d] = useState(false);
+  const [armedUrl, setArmedUrl] = useState<string | null>(null);
+  const [armedName, setArmedName] = useState<string | null>(null);
   const { theme, toggleTheme } = useTheme();
   const bannerRef = useRef<HTMLDivElement>(null);
+
+  const armModel = planner.armModel;
 
   // Keyboard shortcuts (ignored while typing in inputs).
   useEffect(() => {
@@ -162,6 +173,21 @@ export default function App() {
               </TooltipTrigger>
               <TooltipContent>Import a real area as editable tiles</TooltipContent>
             </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant={view3d ? "default" : "secondary"}
+                  size="icon"
+                  aria-pressed={view3d}
+                  aria-label={view3d ? "Switch to 2D view" : "Switch to 3D view"}
+                  title={view3d ? "2D view" : "3D view"}
+                  onClick={() => setView3d((v) => !v)}
+                >
+                  <Box className="size-4" aria-hidden="true" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>{view3d ? "2D view" : "3D view"}</TooltipContent>
+            </Tooltip>
             <Button
               variant="ghost"
               size="icon"
@@ -203,6 +229,15 @@ export default function App() {
           {/* Tool rail (desktop) */}
           <aside className="hidden w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-card/40 p-3 md:flex">
             <TilePalette activeTool={state.tool} onSelectTool={setTool} />
+            <ModelUpload
+              armedUrl={armedUrl}
+              armedName={armedName}
+              onArm={(url, name) => {
+                setArmedUrl(url);
+                setArmedName(name);
+                armModel(url);
+              }}
+            />
             <SaveLoadPanel planner={planner} />
             <p className="mt-auto px-1 text-[11px] leading-relaxed text-faint">
               Parks lift nearby housing. Industry harms it. Roads connect
@@ -210,16 +245,34 @@ export default function App() {
             </p>
           </aside>
 
-          {/* City canvas */}
+          {/* City canvas — 2D (default) or optional 3D (PRD Phase 5). */}
           <main className="mg-backdrop relative min-w-0 flex-1">
-            <CityCanvas
-              tiles={state.tiles}
-              toolActive={state.tool !== "select"}
-              hoverColor={hoverColor}
-              feedbacks={state.feedbacks}
-              onPlace={placeAt}
-              onBoundsChange={planner.reportBounds}
-            />
+            {view3d ? (
+              <Suspense
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                    Loading 3D view…
+                  </div>
+                }
+              >
+                <CityCanvas3D
+                  tiles={state.tiles}
+                  activeTool={state.tool}
+                  onSelect={
+                    state.tool === "select" ? (x, y) => placeAt(x, y) : undefined
+                  }
+                />
+              </Suspense>
+            ) : (
+              <CityCanvas
+                tiles={state.tiles}
+                toolActive={state.tool !== "select"}
+                hoverColor={hoverColor}
+                feedbacks={state.feedbacks}
+                onPlace={placeAt}
+                onBoundsChange={planner.reportBounds}
+              />
+            )}
           </main>
         </div>
 

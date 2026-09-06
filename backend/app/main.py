@@ -23,6 +23,7 @@ from pydantic import ValidationError
 from app import config
 from app.api.gis import router as gis_router
 from app.api.layouts import router as layouts_router
+from app.api.assets import router as assets_router
 from app.errors import ApiError
 from app.models.requests import (
     CalculateRequest,
@@ -43,6 +44,7 @@ app = FastAPI(
 
 app.include_router(layouts_router)
 app.include_router(gis_router)
+app.include_router(assets_router)
 
 
 def _cors_origins() -> list[str]:

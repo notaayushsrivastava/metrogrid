@@ -147,6 +147,64 @@ export async function importGisArea(
   }
 }
 
+export interface AssetUploadResponse {
+  filename: string;
+  model_url: string;
+  size_bytes: number;
+  content_type: string;
+}
+
+const ASSETS_BASE = `${API_BASE}/api/assets`;
+
+/**
+ * Upload a 3D model (.glb / .gltf) to Supabase Storage (PRD §12.3, Phase 5).
+ * The backend verifies file type by magic bytes and caps size at 25 MB.
+ */
+export async function uploadAsset(
+  file: File,
+  signal?: AbortSignal
+): Promise<AssetUploadResponse> {
+  const form = new FormData();
+  form.append("file", file);
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+  signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+  let response: Response;
+  try {
+    response = await fetch(`${ASSETS_BASE}/upload`, {
+      method: "POST",
+      body: form,
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError(0, "Upload timed out or was cancelled.");
+    }
+    throw new ApiError(0, "Backend unavailable while uploading the model.");
+  }
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    let detail = `Upload failed (HTTP ${response.status}).`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      // keep default detail
+    }
+    throw new ApiError(response.status, detail);
+  }
+
+  try {
+    return (await response.json()) as AssetUploadResponse;
+  } catch {
+    throw new ApiError(response.status, "Upload API returned an invalid response.");
+  }
+}
+
 export async function listLayouts(): Promise<LayoutListResponse> {
   return (await _getJson(`${LAYOUTS_BASE}`)) as LayoutListResponse;
 }

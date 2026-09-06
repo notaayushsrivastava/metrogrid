@@ -213,6 +213,8 @@ export interface CityPlanner {
   refreshLayouts: () => void;
   saveCity: (name: string) => Promise<void>;
   loadCity: (layoutId: string) => Promise<void>;
+  /** Arm a 3D model URL so the next placed tile carries it (PRD §16.2). */
+  armModel: (url: string | null) => void;
   /**
    * GIS bounding-box import (PRD §7, Phase 4). Fetches the imported sparse
    * tiles, merges them into the authoritative state (existing tiles win), and
@@ -288,6 +290,8 @@ export function useCityPlanner(): CityPlanner {
     []
   );
 
+  const modelUrlRef = useRef<string | null>(null);
+
   const placeAt = useCallback(
     (x: number, y: number) => {
       if (!inBounds(x, y)) return;
@@ -317,14 +321,25 @@ export function useCityPlanner(): CityPlanner {
       const tileType = TOOL_TO_TILE[tool];
       if (tileType === undefined) return;
 
+      // Attach the armed 3D model reference when present (PRD §16.2). The
+      // model_url is tile metadata only — simulation semantics are unchanged.
+      const tile: TileObject = { type: tileType };
+      if (modelUrlRef.current) {
+        tile.model_url = modelUrlRef.current;
+      }
+
       const tiles = new Map(current.tiles);
-      tiles.set(key, { type: tileType });
+      tiles.set(key, tile);
       stateRef.current = { ...stateRef.current, tiles };
       dispatch({ type: "PLACE", key, tileType });
       void runCalculation(tiles, { x, y, type: tileType, previous_type: previousType });
     },
     [runCalculation]
   );
+
+  const armModel = useCallback((url: string | null) => {
+    modelUrlRef.current = url;
+  }, []);
 
   const setTool = useCallback(
     (tool: ToolId) => {
@@ -423,6 +438,7 @@ export function useCityPlanner(): CityPlanner {
     saveCity,
     loadCity,
     importGis,
+    armModel,
   };
 }
 
