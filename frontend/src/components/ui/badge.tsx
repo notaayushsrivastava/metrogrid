@@ -13,9 +13,9 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: "border-border bg-secondary text-secondary-foreground",
-        success: "border-teal-500/40 bg-teal-500/10 text-teal-200",
-        warning: "border-amber-500/40 bg-amber-500/10 text-amber-200",
-        danger: "border-rose-500/40 bg-rose-500/10 text-rose-200",
+        success: "border-[#7cffb2]/40 bg-[#7cffb2]/10 text-[#7cffb2]",
+        warning: "border-[#ffd166]/40 bg-[#ffd166]/10 text-[#ffd166]",
+        danger: "border-[#ff6b6b]/40 bg-[#ff6b6b]/10 text-[#ff6b6b]",
       },
     },
     defaultVariants: { variant: "default" },

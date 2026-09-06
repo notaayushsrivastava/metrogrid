@@ -31,66 +31,66 @@ export interface TileMeta {
 export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
   [TILE.RESIDENTIAL]: {
     label: "Residential",
-    color: "#2dd4bf",
-    edge: "#0f766e",
-    ink: "#042f2e",
+    color: "#7cffb2",
+    edge: "#2e7d4f",
+    ink: "#06130b",
     glyph: "R",
   },
   [TILE.COMMERCIAL]: {
     label: "Commercial",
-    color: "#38bdf8",
-    edge: "#0369a1",
-    ink: "#082f49",
+    color: "#62a8ff",
+    edge: "#1d4e8f",
+    ink: "#061523",
     glyph: "C",
   },
   [TILE.GREEN]: {
-    label: "Green Space",
-    color: "#4ade80",
-    edge: "#15803d",
+    label: "Park",
+    color: "#34d399",
+    edge: "#0f5132",
     ink: "#052e16",
     glyph: "P",
   },
   [TILE.INDUSTRIAL]: {
     label: "Industrial",
-    color: "#fbbf24",
-    edge: "#b45309",
-    ink: "#451a03",
+    color: "#ffd166",
+    edge: "#8a6d1f",
+    ink: "#231a04",
     glyph: "I",
   },
   [TILE.ROAD]: {
     label: "Road",
-    color: "#64748b",
-    edge: "#334155",
-    ink: "#e2e8f0",
+    color: "#8d96a5",
+    edge: "#3a4150",
+    ink: "#0b0e13",
     glyph: "=",
   },
   [TILE.ROAD_PEDESTRIAN]: {
     label: "Pedestrian Path",
-    color: "#94a3b8",
-    edge: "#475569",
-    ink: "#0f172a",
+    color: "#5c6573",
+    edge: "#2a3140",
+    ink: "#0b0e13",
     glyph: "·",
   },
   [TILE.ROAD_LOCAL]: {
     label: "Local Road",
-    color: "#64748b",
-    edge: "#334155",
-    ink: "#e2e8f0",
+    color: "#8d96a5",
+    edge: "#3a4150",
+    ink: "#0b0e13",
     glyph: "=",
   },
   [TILE.ROAD_AVENUE]: {
     label: "Transit Avenue",
-    color: "#7c8ba1",
-    edge: "#334155",
-    ink: "#ffffff",
+    color: "#62a8ff",
+    edge: "#1d4e8f",
+    ink: "#061523",
     glyph: "≡",
   },
   [TILE.ROAD_HIGHWAY]: {
     label: "Express Highway",
-    color: "#8b9cb3",
-    edge: "#1e293b",
-    ink: "#fbbf24",
-    glyph: "⌂",
+    color: "#ffd166",
+    edge: "#8a6d1f",
+    ink: "#231a04",
+    glyph: "≣",
   },
 };
 
@@ -102,16 +102,26 @@ export interface ToolMeta {
   key: string;
   glyph: string;
   color: string;
+  /** Sidebar section (wireframe: BUILD / ZONES / ROADS). */
+  group: "build" | "zones" | "roads";
 }
 
 export const TOOLS: ToolMeta[] = [
-  { id: "select", label: "Select", places: null, key: "V", glyph: "◻", color: "#94a3b8" },
-  { id: "residential", label: "Residential", places: TILE.RESIDENTIAL, key: "1", glyph: "R", color: "#2dd4bf" },
-  { id: "commercial", label: "Commercial", places: TILE.COMMERCIAL, key: "2", glyph: "C", color: "#38bdf8" },
-  { id: "green", label: "Park", places: TILE.GREEN, key: "3", glyph: "P", color: "#4ade80" },
-  { id: "industrial", label: "Industrial", places: TILE.INDUSTRIAL, key: "4", glyph: "I", color: "#fbbf24" },
-  { id: "road", label: "Road", places: TILE.ROAD, key: "5", glyph: "=", color: "#64748b" },
-  { id: "erase", label: "Erase", places: TILE.EMPTY, key: "X", glyph: "⌫", color: "#f87171" },
+  { id: "select", label: "Select", places: null, key: "V", glyph: "↖", color: "#8d96a5", group: "build" },
+  { id: "erase", label: "Erase", places: TILE.EMPTY, key: "X", glyph: "⌫", color: "#ff6b6b", group: "build" },
+  { id: "residential", label: "Res", places: TILE.RESIDENTIAL, key: "1", glyph: "R", color: "#7cffb2", group: "zones" },
+  { id: "commercial", label: "Com", places: TILE.COMMERCIAL, key: "2", glyph: "C", color: "#62a8ff", group: "zones" },
+  { id: "green", label: "Park", places: TILE.GREEN, key: "3", glyph: "P", color: "#34d399", group: "zones" },
+  { id: "industrial", label: "Ind", places: TILE.INDUSTRIAL, key: "4", glyph: "I", color: "#ffd166", group: "zones" },
+  { id: "road_local", label: "Local", places: TILE.ROAD_LOCAL, key: "5", glyph: "=", color: "#8d96a5", group: "roads" },
+  { id: "road_transit", label: "Transit", places: TILE.ROAD_AVENUE, key: "6", glyph: "≡", color: "#62a8ff", group: "roads" },
+  { id: "road_highway", label: "Highway", places: TILE.ROAD_HIGHWAY, key: "7", glyph: "≣", color: "#ffd166", group: "roads" },
+];
+
+export const TOOL_GROUPS: { id: ToolMeta["group"]; label: string; marker: string }[] = [
+  { id: "build", label: "Build", marker: "▣" },
+  { id: "zones", label: "Zones", marker: "□" },
+  { id: "roads", label: "Roads", marker: "═" },
 ];
 
 export function toolById(id: ToolId): ToolMeta {

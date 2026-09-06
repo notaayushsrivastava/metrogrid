@@ -55,6 +55,10 @@ export interface CityState {
   layoutLoading: boolean;
   layoutError: string | null;
   congestion: TrafficDetail | null;
+  /** Epoch ms of the last successful layout save (status bar ticker). */
+  lastSavedAt: number | null;
+  /** Name of the city as last saved/loaded (status bar). */
+  cityName: string | null;
 }
 
 export const FEEDBACK_MS = 1500;
@@ -72,7 +76,9 @@ type CityAction =
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
   | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }> }
-  | { type: "IMPORT_MERGED"; tiles: GridState };
+  | { type: "IMPORT_MERGED"; tiles: GridState }
+  | { type: "SAVED"; name: string; at: number }
+  | { type: "CITY_NAMED"; name: string };
 
 export const initialState: CityState = {
   tiles: new Map(),
@@ -88,6 +94,8 @@ export const initialState: CityState = {
   layoutLoading: false,
   layoutError: null,
   congestion: null,
+  lastSavedAt: null,
+  cityName: null,
 };
 
 export function tileKey(x: number, y: number): string {
@@ -181,6 +189,12 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
       // Commit merged GIS tiles into the rendered state atomically.
       return { ...state, tiles: action.tiles, feedbacks: [] };
 
+    case "SAVED":
+      return { ...state, lastSavedAt: action.at, cityName: action.name };
+
+    case "CITY_NAMED":
+      return { ...state, cityName: action.name };
+
     default:
       return state;
   }
@@ -217,6 +231,9 @@ const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
   green: TILE.GREEN,
   industrial: TILE.INDUSTRIAL,
   road: TILE.ROAD,
+  road_local: TILE.ROAD_LOCAL,
+  road_transit: TILE.ROAD_AVENUE,
+  road_highway: TILE.ROAD_HIGHWAY,
 };
 
 /**
@@ -350,6 +367,7 @@ export function useCityPlanner(): CityPlanner {
         grid_state[key] = { type: tile.type };
       });
       await saveLayout({ name, grid_state });
+      dispatch({ type: "SAVED", name, at: Date.now() });
       await refreshLayouts();
     },
     [refreshLayouts]
@@ -358,6 +376,8 @@ export function useCityPlanner(): CityPlanner {
   const loadCity = useCallback(async (layoutId: string) => {
     const detail = await loadLayout(layoutId);
     dispatch({ type: "LAYOUT_LOAD", grid: detail.grid_state });
+    dispatch({ type: "CITY_NAMED", name: detail.name });
+    dispatch({ type: "SAVED", name: detail.name, at: Date.now() });
     void runCalculation(
       new Map(
         Object.entries(detail.grid_state).map(([k, v]) => [k, { type: v.type as TileType }])

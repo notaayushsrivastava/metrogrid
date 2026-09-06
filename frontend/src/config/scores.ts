@@ -18,9 +18,9 @@ export interface ScoreStyle {
 }
 
 const STYLES: Record<ScoreStatus, ScoreStyle> = {
-  critical: { status: "critical", color: "#f87171", cue: "▼", word: "low" },
-  warning: { status: "warning", color: "#fbbf24", cue: "■", word: "fair" },
-  good: { status: "good", color: "#4ade80", cue: "●", word: "good" },
+  critical: { status: "critical", color: "#ff6b6b", cue: "▼", word: "low" },
+  warning: { status: "warning", color: "#ffd166", cue: "■", word: "fair" },
+  good: { status: "good", color: "#7cffb2", cue: "●", word: "good" },
 };
 
 export function scoreStatus(score: number): ScoreStatus {

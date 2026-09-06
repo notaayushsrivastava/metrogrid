@@ -152,7 +152,7 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
         </div>
 
         {issues.length > 0 && (
-          <p className="flex items-start gap-1.5 text-[11px] text-amber-300" role="alert">
+          <p className="flex items-start gap-1.5 text-[11px] text-[#ffd166]" role="alert">
             <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
             {issues[0].message}
           </p>
@@ -228,7 +228,7 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
           {phase === "success" && result && (
             <div
               ref={successRef}
-              className="flex items-start gap-2 rounded-md border border-teal-500/40 bg-teal-500/10 px-2.5 py-2 text-[11px] text-teal-200"
+              className="flex items-start gap-2 rounded-md border border-[#7cffb2]/40 bg-[#7cffb2]/10 px-2.5 py-2 text-[11px] text-[#7cffb2]"
               role="status"
             >
               <CheckCircle2 className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
@@ -240,7 +240,7 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
             </div>
           )}
           {phase === "empty" && (
-            <p className="flex items-start gap-1.5 text-[11px] text-amber-300" role="status">
+            <p className="flex items-start gap-1.5 text-[11px] text-[#ffd166]" role="status">
               <AlertTriangle className="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
               No streets or buildings found here (or every cell was already
               occupied). Try a denser area or a different origin.
@@ -248,10 +248,10 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
           )}
           {phase === "error" && (
             <div
-              className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2.5 py-2"
+              className="rounded-md border border-[#ff6b6b]/40 bg-[#ff6b6b]/10 px-2.5 py-2"
               role="alert"
             >
-              <p className="text-[11px] text-rose-200">{error}</p>
+              <p className="text-[11px] text-[#ff6b6b]">{error}</p>
               <Button
                 variant="destructive"
                 size="sm"

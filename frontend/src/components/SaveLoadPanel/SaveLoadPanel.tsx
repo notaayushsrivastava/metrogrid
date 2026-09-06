@@ -9,6 +9,8 @@
 import { useEffect, useState } from "react";
 import type { CityPlanner } from "../../state/cityState";
 import type { LayoutSummary } from "../../types/city";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface SaveLoadPanelProps {
   planner: CityPlanner;
@@ -68,50 +70,51 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
 
   return (
     <div className="flex flex-col gap-2">
-      <p className="px-1 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+      <p className="px-1 text-[10px] font-bold uppercase tracking-widest text-faint">
         Layouts
       </p>
 
       <div className="flex gap-1">
-        <input
+        <Input
           type="text"
           value={name}
-          placeholder="Layout name"
+          placeholder="Layout name…"
+          autoComplete="off"
+          spellCheck={false}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
             if (e.key === "Enter") void onSave();
           }}
-          className="min-w-0 flex-1 rounded-md border border-slate-700 bg-slate-950 px-2 py-1.5 text-xs text-slate-200 outline-none focus:border-sky-500"
+          className="h-7 min-w-0 flex-1 font-mono text-xs"
           aria-label="Layout name"
         />
-        <button
+        <Button
           type="button"
+          size="sm"
+          variant="secondary"
           onClick={() => void onSave()}
           disabled={busy}
-          className="shrink-0 rounded-md border border-slate-600 px-2.5 py-1.5 text-xs font-semibold text-slate-200 outline-none transition-colors hover:border-slate-400 focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50"
         >
-          Save
-        </button>
+          {busy ? "Saving…" : "Save"}
+        </Button>
       </div>
 
       {notice && (
-        <p className="px-1 text-[11px] text-slate-400" role="status">
+        <p className="px-1 text-[11px] text-muted-foreground" role="status">
           {notice}
         </p>
       )}
 
       {storageNote && (
-        <p className="px-1 text-[11px] leading-relaxed text-amber-300/80">
-          {storageNote}
-        </p>
+        <p className="px-1 text-[11px] leading-relaxed text-[#ffd166]">{storageNote}</p>
       )}
 
       <div className="flex max-h-40 flex-col gap-1 overflow-y-auto">
         {state.layoutLoading && (
-          <p className="px-1 text-[11px] text-slate-500">Loading layouts…</p>
+          <p className="px-1 text-[11px] text-muted-foreground">Loading layouts…</p>
         )}
         {!state.layoutLoading && state.layouts.length === 0 && (
-          <p className="px-1 text-[11px] text-slate-500">No saved layouts yet.</p>
+          <p className="px-1 text-[11px] text-faint">No saved layouts yet.</p>
         )}
         {state.layouts.map((layout) => (
           <button
@@ -119,11 +122,11 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
             type="button"
             onClick={() => void onLoad(layout)}
             disabled={busy}
-            className="flex items-center justify-between gap-2 rounded-md border border-slate-700/60 px-2 py-1.5 text-left text-xs text-slate-300 outline-none transition-colors hover:border-slate-500 hover:bg-slate-800/60 focus-visible:ring-2 focus-visible:ring-sky-400 disabled:opacity-50"
+            className="flex items-center justify-between gap-2 rounded-md border border-border px-2 py-1.5 text-left text-xs text-secondary-foreground outline-none transition-colors hover:border-[#7cffb2]/40 hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50"
             title={`${layout.tile_count} tiles`}
           >
-            <span className="truncate">{layout.name}</span>
-            <span className="shrink-0 text-[10px] text-slate-500">
+            <span className="min-w-0 truncate">{layout.name}</span>
+            <span className="shrink-0 font-mono text-[10px] tabular-nums text-faint">
               {layout.tile_count}
             </span>
           </button>
@@ -131,7 +134,7 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
       </div>
 
       {state.layoutError && (
-        <p className="px-1 text-[11px] text-rose-400" role="alert">
+        <p className="px-1 text-[11px] text-[#ff6b6b]" role="alert">
           {state.layoutError}
         </p>
       )}

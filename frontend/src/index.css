@@ -22,6 +22,14 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  /* Metro palette utilities: text-metro-green, bg-metro-blue, … */
+  --color-metro-green: #7cffb2;
+  --color-metro-blue: #62a8ff;
+  --color-metro-warning: #ffd166;
+  --color-metro-danger: #ff6b6b;
+  --color-elevated: var(--elevated);
+  --color-faint: var(--faint);
+
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -35,28 +43,31 @@
 
 :root {
   --radius: 0.55rem;
+  color-scheme: dark;
 
-  --background: #020617;
-  --foreground: #e2e8f0;
+  --background: #080a0d;
+  --foreground: #f5f7fa;
 
-  --card: #0b1220;
-  --card-foreground: #e2e8f0;
-  --popover: #0b1220;
-  --popover-foreground: #e2e8f0;
+  --card: #0e1116;
+  --card-foreground: #f5f7fa;
+  --popover: #151922;
+  --popover-foreground: #f5f7fa;
+  --elevated: #151922;
 
-  --primary: #2dd4bf;
-  --primary-foreground: #022c22;
-  --secondary: #16213a;
-  --secondary-foreground: #cbd5e1;
-  --muted: #101a2e;
-  --muted-foreground: #8ea0b8;
-  --accent: #0e7490;
-  --accent-foreground: #cffafe;
-  --destructive: #f87171;
+  --primary: #7cffb2;
+  --primary-foreground: #06130b;
+  --secondary: #151922;
+  --secondary-foreground: #c9d1dc;
+  --muted: #10141b;
+  --muted-foreground: #8d96a5;
+  --accent: #182135;
+  --accent-foreground: #f5f7fa;
+  --destructive: #ff6b6b;
+  --faint: #5c6573;
 
-  --border: #1c2941;
-  --input: #24344f;
-  --ring: #38bdf8;
+  --border: #242a34;
+  --input: #2a3140;
+  --ring: #7cffb2;
 }
 
 html,
@@ -81,8 +92,34 @@ body {
 }
 
 ::selection {
-  background: rgba(45, 212, 191, 0.28);
+  background: rgba(124, 255, 178, 0.25);
 }
+
+/* LIVE indicator: soft radar pulse (decorative; stops under reduced motion). */
+@keyframes mg-live {
+  0% {
+    box-shadow: 0 0 0 0 rgba(124, 255, 178, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(124, 255, 178, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(124, 255, 178, 0);
+  }
+}
+
+.mg-live-dot {
+  animation: mg-live 2.2s ease-out infinite;
+}
+
+/* Hairline scanline texture for the canvas backdrop (depth, not noise). */
+.mg-backdrop {
+  background:
+    radial-gradient(1200px 500px at 70% -10%, rgba(98, 168, 255, 0.05), transparent 60%),
+    radial-gradient(900px 420px at 10% 110%, rgba(124, 255, 178, 0.045), transparent 60%),
+    var(--background);
+}
+
 
 /* Floating placement feedback: float upward + fade out (PRD §11). */
 @keyframes feedback-pop {
@@ -125,7 +162,7 @@ body {
 
 /* ---- Leaflet dark treatment (GIS import map) ---------------------------- */
 .leaflet-container {
-  background: #0b1220;
+  background: #0e1116;
   font-family: var(--font-sans);
   outline: none;
 }
@@ -136,23 +173,23 @@ body {
 
 .leaflet-container a.leaflet-control-attribution {
   background: rgba(2, 6, 23, 0.75);
-  color: #64748b;
+  color: #5c6573;
   font-size: 9px;
 }
 
 .leaflet-container a.leaflet-control-attribution:hover {
-  color: #94a3b8;
+  color: #8d96a5;
 }
 
 .leaflet-bar {
-  border: 1px solid #1c2941 !important;
+  border: 1px solid #242a34 !important;
   box-shadow: none !important;
 }
 
 .leaflet-bar a {
-  background: #0b1220;
+  background: #0e1116;
   color: #cbd5e1;
-  border-bottom-color: #1c2941;
+  border-bottom-color: #242a34;
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -162,6 +199,9 @@ body {
     opacity: 0;
   }
   .mg-rise {
+    animation: none;
+  }
+  .mg-live-dot {
     animation: none;
   }
 }

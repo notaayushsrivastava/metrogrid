@@ -12,6 +12,7 @@ import { MapPlus } from "lucide-react";
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
 import { SaveLoadPanel } from "./components/SaveLoadPanel/SaveLoadPanel";
+import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TilePalette } from "./components/TilePalette/TilePalette";
 import { Button } from "./components/ui/button";
 import {
@@ -39,20 +40,22 @@ const KEY_TO_TOOL: Record<string, ToolId> = {
   "2": "commercial",
   "3": "green",
   "4": "industrial",
-  "5": "road",
+  "5": "road_local",
+  "6": "road_transit",
+  "7": "road_highway",
   x: "erase",
 };
 
 const STATUS_LABEL: Record<ConnectionStatus, string> = {
-  connecting: "Connecting…",
-  online: "Engine online",
-  offline: "Engine offline",
+  connecting: "SYNC",
+  online: "LIVE",
+  offline: "OFFLINE",
 };
 
 const STATUS_COLOR: Record<ConnectionStatus, string> = {
-  connecting: "#fbbf24",
-  online: "#4ade80",
-  offline: "#f87171",
+  connecting: "#ffd166",
+  online: "#7cffb2",
+  offline: "#ff6b6b",
 };
 
 export default function App() {
@@ -90,32 +93,50 @@ export default function App() {
     <TooltipProvider>
       <div className="flex h-dvh flex-col bg-background text-foreground">
         {/* Header */}
-        <header className="flex items-center gap-3 border-b border-border bg-card/60 px-4 py-2.5 backdrop-blur">
-          <div className="flex items-center gap-2">
+        <header className="flex items-center gap-4 border-b border-border bg-card/70 px-4 py-2.5 backdrop-blur">
+          <div className="flex min-w-0 items-center gap-2.5">
             <span
               aria-hidden="true"
-              className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-teal-300 to-sky-500 text-[11px] font-black text-slate-950"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-sm text-primary"
             >
-              MG
+              ◈
             </span>
-            <h1 className="font-display text-sm font-bold tracking-wide text-foreground">
-              MetroGrid
-            </h1>
+            <div className="min-w-0 leading-tight">
+              <h1
+                className="font-display text-sm font-extrabold uppercase tracking-[0.18em] text-foreground"
+                translate="no"
+              >
+                MetroGrid
+              </h1>
+              <p className="font-mono text-[9px] font-semibold uppercase tracking-[0.3em] text-faint">
+                Urban Simulator
+              </p>
+            </div>
           </div>
 
-          <span
-            className="ml-1 hidden items-center gap-1.5 text-[11px] text-muted-foreground sm:flex"
-            title={`Scoring engine: ${STATUS_LABEL[state.status]}`}
+          <div
+            className="ml-auto flex items-center gap-2"
+            role="status"
+            aria-label={`Scoring engine: ${STATUS_LABEL[state.status]}`}
           >
             <span
               aria-hidden="true"
-              className="h-2 w-2 rounded-full"
+              className={
+                state.status === "online"
+                  ? "mg-live-dot h-2 w-2 rounded-full"
+                  : "h-2 w-2 rounded-full"
+              }
               style={{ backgroundColor: STATUS_COLOR[state.status] }}
             />
-            {STATUS_LABEL[state.status]}
-          </span>
+            <span
+              className="hidden font-mono text-[10px] font-bold tracking-[0.2em] sm:inline"
+              style={{ color: STATUS_COLOR[state.status] }}
+            >
+              {STATUS_LABEL[state.status]}
+            </span>
+          </div>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex items-center gap-2">
             <Dashboard
               scores={state.scores}
               movement={state.movement}
@@ -153,7 +174,7 @@ export default function App() {
           <div
             ref={bannerRef}
             role="alert"
-            className="flex items-center gap-3 border-b border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-200"
+            className="flex items-center gap-3 border-b border-[#ffd166]/30 bg-[#ffd166]/10 px-4 py-2 text-xs text-[#ffd166]"
           >
             <span aria-hidden="true">▲</span>
             <span className="flex-1">
@@ -166,22 +187,18 @@ export default function App() {
         )}
 
         <div className="flex min-h-0 flex-1">
-          {/* Tool sidebar (desktop) */}
-          <aside className="hidden w-52 shrink-0 flex-col gap-3 border-r border-border bg-card/40 p-3 md:flex">
-            <div>
-              <p className="mb-1.5 px-1 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
-                Tools
-              </p>
-              <TilePalette activeTool={state.tool} onSelectTool={setTool} />
-            </div>
+          {/* Tool rail (desktop) */}
+          <aside className="hidden w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-card/40 p-3 md:flex">
+            <TilePalette activeTool={state.tool} onSelectTool={setTool} />
             <SaveLoadPanel planner={planner} />
-            <p className="mt-auto px-1 text-[11px] leading-relaxed text-muted-foreground">
-              Roads connect zones. Parks lift nearby housing, industry harms it.
+            <p className="mt-auto px-1 text-[11px] leading-relaxed text-faint">
+              Parks lift nearby housing. Industry harms it. Roads connect
+              everything.
             </p>
           </aside>
 
           {/* City canvas */}
-          <main className="relative min-w-0 flex-1">
+          <main className="mg-backdrop relative min-w-0 flex-1">
             <CityCanvas
               tiles={state.tiles}
               toolActive={state.tool !== "select"}
@@ -190,14 +207,19 @@ export default function App() {
               onPlace={placeAt}
               onBoundsChange={planner.reportBounds}
             />
-            {/* Current action hint (information hierarchy #1, PRD §14A) */}
-            <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-border/70 bg-card/85 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur">
-              {state.tool === "select"
-                ? "Select mode — choose a tool to place zones"
-                : `${tool.label} — click a cell${state.tool === "erase" ? " to remove" : ""}`}
-            </div>
           </main>
         </div>
+
+        {/* Status rail (wireframe footer): hints + city/save ticker */}
+        <StatusBar
+          actionHint={
+            state.tool === "select"
+              ? "Select mode — choose a tool to place zones"
+              : `${tool.label} — click a cell${state.tool === "erase" ? " to remove" : ""}`
+          }
+          city={state.cityName}
+          savedAt={state.lastSavedAt}
+        />
 
         {/* Tool bar (mobile) */}
         <nav className="flex items-center gap-2 border-t border-border bg-card/60 px-2 py-2 md:hidden">

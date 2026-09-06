@@ -115,6 +115,9 @@ export type ToolId =
   | "green"
   | "industrial"
   | "road"
+  | "road_local"
+  | "road_transit"
+  | "road_highway"
   | "erase";
 
 /** Geographic bounding box for GIS import (PRD §7.2, §12.2). */

@@ -138,7 +138,7 @@ function drawTile(
     // warmer stripe; avenues draw a doubled line (visual road hierarchy).
     const cx = px + size / 2;
     const cy = py + size / 2;
-    ctx.strokeStyle = type === 43 ? "#fbbf24" : meta.ink;
+    ctx.strokeStyle = type === 43 ? "#ffd166" : meta.ink;
     ctx.lineWidth =
       type === 43 ? Math.max(2, size * 0.12) : Math.max(1.5, size * 0.08);
     ctx.setLineDash(
@@ -519,9 +519,9 @@ export function CityCanvas({
                 left: px + size / 2,
                 top: py - 6,
                 transform: "translateX(-50%)",
-                backgroundColor: "rgba(2, 6, 23, 0.92)",
-                color: positive ? "#4ade80" : "#f87171",
-                border: `1px solid ${positive ? "rgba(74, 222, 128, 0.5)" : "rgba(248, 113, 113, 0.5)"}`,
+                backgroundColor: "rgba(8, 10, 13, 0.92)",
+                color: positive ? "#7cffb2" : "#ff6b6b",
+                border: `1px solid ${positive ? "rgba(124, 255, 178, 0.5)" : "rgba(255, 107, 107, 0.5)"}`,
               }}
               role="status"
             >
@@ -604,6 +604,8 @@ export function CityCanvas({
               alt=""
               aria-hidden="true"
               loading="lazy"
+              width={1376}
+              height={768}
               className="h-24 w-auto rounded-lg opacity-90"
             />
             <p className="font-display text-base font-bold text-foreground">

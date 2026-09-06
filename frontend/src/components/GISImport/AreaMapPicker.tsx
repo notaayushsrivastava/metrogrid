@@ -20,11 +20,11 @@ interface AreaMapPickerProps {
 }
 
 const RECT_STYLE: L.PolylineOptions = {
-  color: "#2dd4bf",
+  color: "#7cffb2",
   weight: 1.5,
   opacity: 0.9,
   dashArray: "4 3",
-  fillColor: "#2dd4bf",
+  fillColor: "#7cffb2",
   fillOpacity: 0.08,
 };
 
@@ -58,8 +58,8 @@ export function AreaMapPicker({ selection, onSelect, nonce }: AreaMapPickerProps
         cornerARef.current = event.latlng;
         markerARef.current = L.circleMarker(event.latlng, {
           radius: 4,
-          color: "#2dd4bf",
-          fillColor: "#2dd4bf",
+          color: "#7cffb2",
+          fillColor: "#7cffb2",
           fillOpacity: 1,
         }).addTo(map);
         return;
@@ -80,12 +80,12 @@ export function AreaMapPicker({ selection, onSelect, nonce }: AreaMapPickerProps
       rectRef.current = L.rectangle(bounds, RECT_STYLE).addTo(map);
       markerARef.current = L.circleMarker(a, {
         radius: 3,
-        color: "#2dd4bf",
+        color: "#7cffb2",
         fillOpacity: 1,
       }).addTo(map);
       markerBRef.current = L.circleMarker(b, {
         radius: 3,
-        color: "#2dd4bf",
+        color: "#7cffb2",
         fillOpacity: 1,
       }).addTo(map);
       lastEmittedRef.current = next;

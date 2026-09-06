@@ -144,8 +144,8 @@ field beyond the PRD contract) so removals explain why the score changed.
 
 ## Keyboard shortcuts
 
-`V` select · `1` residential · `2` commercial · `3` park · `4` industrial ·
-`5` road · `X` erase
+`V` select · `X` erase · Zones: `1` Res, `2` Com, `3` Park, `4` Ind ·
+Roads: `5` Local, `6` Transit, `7` Highway
 
 ## Roadmap (PRD §1.3)
 

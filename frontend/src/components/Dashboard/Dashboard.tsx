@@ -30,11 +30,11 @@ function CongestionBadge({ detail }: { detail: TrafficDetail | null }) {
   const pct = Math.round(detail.max_ratio * 100);
   return (
     <div
-      className="flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1"
+      className="flex items-center gap-1 rounded-md border border-[#ffd166]/40 bg-[#ffd166]/10 px-2 py-1"
       title={`${detail.congested_roads} of ${detail.road_count} roads congested (peak ${pct}% capacity)`}
     >
-      <span aria-hidden="true" className="text-[10px] text-amber-300">⚠</span>
-      <span className="text-[10px] font-bold text-amber-200">
+      <span aria-hidden="true" className="text-[10px] text-[#ffd166]">⚠</span>
+      <span className="text-[10px] font-bold text-[#ffd166]">
         {detail.congested_roads} congested
       </span>
     </div>
@@ -47,7 +47,7 @@ function Movement({ value }: { value: number | undefined }) {
   return (
     <span
       className="ml-1 text-[10px] font-bold"
-      style={{ color: positive ? "#4ade80" : "#f87171" }}
+      style={{ color: positive ? "#7cffb2" : "#ff6b6b" }}
       aria-label={`${positive ? "up" : "down"} ${Math.abs(value)}`}
     >
       {positive ? "▲" : "▼"}
@@ -90,7 +90,7 @@ export function Dashboard({ scores, movement, calculating, congestion, variant =
               <span
                 aria-hidden="true"
                 className="text-[10px]"
-                style={{ color: style?.color ?? "#64748b" }}
+                style={{ color: style?.color ?? "#5c6573" }}
               >
                 {style?.cue ?? "○"}
               </span>
@@ -102,7 +102,7 @@ export function Dashboard({ scores, movement, calculating, congestion, variant =
           );
         })}
         {calculating && (
-          <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border border-slate-500 border-t-transparent" />
+          <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border border-faint border-t-transparent" />
         )}
         <CongestionBadge detail={congestion ?? null} />
       </div>
@@ -117,21 +117,21 @@ export function Dashboard({ scores, movement, calculating, congestion, variant =
         return (
           <div key={metric}>
             <div className="mb-1 flex items-baseline justify-between">
-              <span className="text-xs font-medium text-slate-400">
+              <span className="text-xs font-medium text-muted-foreground">
                 {METRIC_LABELS[metric as ScoreMetric]}
                 <span className="ml-1.5 text-[10px] uppercase tracking-wide" style={{ color: style?.color }}>
                   {style?.word ?? ""}
                 </span>
               </span>
-              <span className="text-sm font-bold tabular-nums text-slate-100">
+              <span className="text-sm font-bold tabular-nums text-foreground">
                 {value ?? "–"}
                 <Movement value={movement?.[metric as ScoreMetric]} />
               </span>
             </div>
-            <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-700/60">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-border">
               <div
                 className="h-full rounded-full transition-[width] duration-300"
-                style={{ width: `${value ?? 0}%`, backgroundColor: style?.color ?? "#475569" }}
+                style={{ width: `${value ?? 0}%`, backgroundColor: style?.color ?? "#3a4150" }}
                 role="meter"
                 aria-valuemin={0}
                 aria-valuemax={100}
