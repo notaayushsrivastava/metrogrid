@@ -92,6 +92,7 @@ export default function App() {
             scores={state.scores}
             movement={state.movement}
             calculating={state.calculating}
+            congestion={state.congestion}
             variant="chip"
           />
           <button

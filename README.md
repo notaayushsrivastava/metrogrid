@@ -134,7 +134,9 @@ field beyond the PRD contract) so removals explain why the score changed.
 - [x] **Phase 2** — unbounded sparse canvas: pan (drag/middle/Space/touch),
       zoom (wheel/pinch/controls), chunked viewport culling, signed 32-bit
       coords, live coordinate readout, active-bounds sent on every request
-- [ ] **Phase 3** — road subtypes UI, congestion, Supabase save/load
+- [x] **Phase 3** — congestion estimation (PRD §9.7) surfaced as
+      ``traffic_detail``; layout save/list/load via Supabase with in-memory
+      fallback (PRD §17, migration ``001_city_plans.sql``); Save/Load panel
 - [ ] **Phase 4** — GIS import (`/api/gis/import`)
 - [ ] **Phase 5** — optional 3D (`.glb`/`.gltf`, React Three Fiber)
 - [ ] **Phase 6** — polish, a11y audit, demo seed city

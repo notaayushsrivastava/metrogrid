@@ -10,15 +10,33 @@ import {
   scoreStyle,
   type ScoreMetric,
 } from "../../config/scores";
-import type { GlobalScores } from "../../types/city";
+import type { GlobalScores, TrafficDetail } from "../../types/city";
 import type { MetricMovement } from "../../state/cityState";
 
 interface DashboardProps {
   scores: GlobalScores | null;
   movement: MetricMovement | null;
   calculating: boolean;
+  /** Congestion estimate from the scoring engine (PRD §9.7). */
+  congestion?: TrafficDetail | null;
   /** `bar` renders labeled meters; `chip` renders the compact header row. */
   variant?: "bar" | "chip";
+}
+
+function CongestionBadge({ detail }: { detail: TrafficDetail | null }) {
+  if (!detail || detail.congested_roads <= 0 || detail.road_count === 0) return null;
+  const pct = Math.round(detail.max_ratio * 100);
+  return (
+    <div
+      className="flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1"
+      title={`${detail.congested_roads} of ${detail.road_count} roads congested (peak ${pct}% capacity)`}
+    >
+      <span aria-hidden="true" className="text-[10px] text-amber-300">⚠</span>
+      <span className="text-[10px] font-bold text-amber-200">
+        {detail.congested_roads} congested
+      </span>
+    </div>
+  );
 }
 
 function Movement({ value }: { value: number | undefined }) {
@@ -36,7 +54,7 @@ function Movement({ value }: { value: number | undefined }) {
   );
 }
 
-export function Dashboard({ scores, movement, calculating, variant = "bar" }: DashboardProps) {
+export function Dashboard({ scores, movement, calculating, congestion, variant = "bar" }: DashboardProps) {
   if (variant === "chip") {
     return (
       <div className="flex items-center gap-2" aria-label="City scores">
@@ -66,6 +84,7 @@ export function Dashboard({ scores, movement, calculating, variant = "bar" }: Da
         {calculating && (
           <span aria-hidden="true" className="h-3 w-3 animate-spin rounded-full border border-slate-500 border-t-transparent" />
         )}
+        <CongestionBadge detail={congestion ?? null} />
       </div>
     );
   }

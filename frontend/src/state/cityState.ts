@@ -20,6 +20,7 @@ import {
   type TileObject,
   type TileType,
   type ToolId,
+  type TrafficDetail,
 } from "../types/city";
 
 export type ConnectionStatus = "connecting" | "online" | "offline";
@@ -44,6 +45,7 @@ export interface CityState {
   layoutStorage: "supabase" | "memory" | null;
   layoutLoading: boolean;
   layoutError: string | null;
+  congestion: TrafficDetail | null;
 }
 
 export const FEEDBACK_MS = 1500;
@@ -53,7 +55,7 @@ type CityAction =
   | { type: "PLACE"; key: string; tileType: TileType }
   | { type: "CLEAR" }
   | { type: "CALC_START" }
-  | { type: "CALC_OK"; scores: GlobalScores; delta: LocalDelta | null }
+  | { type: "CALC_OK"; scores: GlobalScores; delta: LocalDelta | null; congestion: TrafficDetail | null }
   | { type: "CALC_FAIL"; error: string }
   | { type: "ADD_FEEDBACK"; feedback: Feedback }
   | { type: "REMOVE_FEEDBACK"; id: number }
@@ -75,6 +77,7 @@ export const initialState: CityState = {
   layoutStorage: null,
   layoutLoading: false,
   layoutError: null,
+  congestion: null,
 };
 
 export function tileKey(x: number, y: number): string {
@@ -129,6 +132,7 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
         calculating: false,
         error: null,
         scores: action.scores,
+        congestion: action.congestion,
         movement: applyMovement(state.scores, action.scores),
       };
 
@@ -217,6 +221,7 @@ export function useCityPlanner(): CityPlanner {
           type: "CALC_OK",
           scores: response.global_scores,
           delta: response.local_deltas,
+          congestion: response.traffic_detail ?? null,
         });
         const delta = response.local_deltas;
         if (delta && delta.value !== 0) {
