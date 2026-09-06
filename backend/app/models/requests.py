@@ -168,6 +168,7 @@ class LocalDelta(BaseModel):
 class CalculateResponse(BaseModel):
     global_scores: GlobalScores
     local_deltas: Optional[LocalDelta] = None
+    traffic_detail: Optional[dict[str, float | int]] = None
 
 
 __all__ = [

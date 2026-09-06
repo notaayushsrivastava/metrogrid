@@ -64,9 +64,42 @@ export interface LocalDelta {
   metric: "livability" | "traffic" | "resources";
 }
 
+export interface TrafficDetail {
+  average_ratio: number;
+  congested_roads: number;
+  road_count: number;
+  max_ratio: number;
+}
+
 export interface CalculateResponse {
   global_scores: GlobalScores;
   local_deltas: LocalDelta | null;
+  traffic_detail: TrafficDetail | null;
+}
+
+export interface LayoutSummary {
+  id: string;
+  name: string;
+  created_at: string | number | null;
+  tile_count: number;
+}
+
+export interface LayoutListResponse {
+  storage: "supabase" | "memory";
+  layouts: LayoutSummary[];
+}
+
+export interface LayoutDetail {
+  id: string;
+  name: string;
+  created_at: string | number | null;
+  grid_state: Record<string, { type: number }>;
+  tile_count: number;
+}
+
+export interface SaveLayoutRequest {
+  name: string;
+  grid_state: Record<string, { type: number }>;
 }
 
 /** User-selectable tools. `select` and `erase` are actions, not tile types. */

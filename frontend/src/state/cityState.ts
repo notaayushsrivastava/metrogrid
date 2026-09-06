@@ -5,7 +5,7 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { calculateScores } from "../services/api";
+import { calculateScores, listLayouts, loadLayout, saveLayout } from "../services/api";
 import {
   GRID_MAX,
   GRID_MIN,
@@ -15,7 +15,9 @@ import {
   type GridBounds,
   type GridState,
   type LatestAction,
+  type LayoutSummary,
   type LocalDelta,
+  type TileObject,
   type TileType,
   type ToolId,
 } from "../types/city";
@@ -38,6 +40,10 @@ export interface CityState {
   calculating: boolean;
   error: string | null;
   feedbacks: Feedback[];
+  layouts: LayoutSummary[];
+  layoutStorage: "supabase" | "memory" | null;
+  layoutLoading: boolean;
+  layoutError: string | null;
 }
 
 export const FEEDBACK_MS = 1500;
@@ -50,7 +56,11 @@ type CityAction =
   | { type: "CALC_OK"; scores: GlobalScores; delta: LocalDelta | null }
   | { type: "CALC_FAIL"; error: string }
   | { type: "ADD_FEEDBACK"; feedback: Feedback }
-  | { type: "REMOVE_FEEDBACK"; id: number };
+  | { type: "REMOVE_FEEDBACK"; id: number }
+  | { type: "LAYOUTS_LOADING" }
+  | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
+  | { type: "LAYOUTS_ERROR"; error: string }
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }> };
 
 export const initialState: CityState = {
   tiles: new Map(),
@@ -61,6 +71,10 @@ export const initialState: CityState = {
   calculating: false,
   error: null,
   feedbacks: [],
+  layouts: [],
+  layoutStorage: null,
+  layoutLoading: false,
+  layoutError: null,
 };
 
 export function tileKey(x: number, y: number): string {
@@ -127,6 +141,28 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
     case "REMOVE_FEEDBACK":
       return { ...state, feedbacks: state.feedbacks.filter((f) => f.id !== action.id) };
 
+    case "LAYOUTS_LOADING":
+      return { ...state, layoutLoading: true, layoutError: null };
+
+    case "LAYOUTS_LOADED":
+      return {
+        ...state,
+        layoutLoading: false,
+        layoutStorage: action.storage,
+        layouts: action.layouts,
+      };
+
+    case "LAYOUTS_ERROR":
+      return { ...state, layoutLoading: false, layoutError: action.error };
+
+    case "LAYOUT_LOAD": {
+      const tiles = new Map<string, TileObject>();
+      for (const [key, tile] of Object.entries(action.grid)) {
+        tiles.set(key, { type: tile.type as TileType });
+      }
+      return { ...state, tiles, feedbacks: [] };
+    }
+
     default:
       return state;
   }
@@ -142,6 +178,9 @@ export interface CityPlanner {
   recalculate: () => void;
   /** Canvas reports the visible active bounds (PRD §6.1) for API calls. */
   reportBounds: (bounds: GridBounds) => void;
+  refreshLayouts: () => void;
+  saveCity: (name: string) => Promise<void>;
+  loadCity: (layoutId: string) => Promise<void>;
 }
 
 const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
@@ -261,11 +300,58 @@ export function useCityPlanner(): CityPlanner {
     void runCalculation(new Map(stateRef.current.tiles), null);
   }, [runCalculation]);
 
+  const refreshLayouts = useCallback(async () => {
+    dispatch({ type: "LAYOUTS_LOADING" });
+    try {
+      const result = await listLayouts();
+      dispatch({ type: "LAYOUTS_LOADED", storage: result.storage, layouts: result.layouts });
+    } catch (error) {
+      dispatch({
+        type: "LAYOUTS_ERROR",
+        error: error instanceof Error ? error.message : "Failed to load layouts.",
+      });
+    }
+  }, []);
+
+  const saveCity = useCallback(
+    async (name: string) => {
+      const current = stateRef.current;
+      const grid_state: Record<string, { type: number }> = {};
+      current.tiles.forEach((tile, key) => {
+        grid_state[key] = { type: tile.type };
+      });
+      await saveLayout({ name, grid_state });
+      await refreshLayouts();
+    },
+    [refreshLayouts]
+  );
+
+  const loadCity = useCallback(async (layoutId: string) => {
+    const detail = await loadLayout(layoutId);
+    dispatch({ type: "LAYOUT_LOAD", grid: detail.grid_state });
+    void runCalculation(
+      new Map(
+        Object.entries(detail.grid_state).map(([k, v]) => [k, { type: v.type as TileType }])
+      ),
+      null
+    );
+  }, [runCalculation]);
+
   // Initial connection probe: score the empty city once on mount.
   useEffect(() => {
     void runCalculation(new Map(), null);
   }, [runCalculation]);
 
-  return { state, setTool, placeAt, clearCity, recalculate, reportBounds };
+  return {
+    state,
+    setTool,
+    placeAt,
+    clearCity,
+    recalculate,
+    reportBounds,
+    refreshLayouts,
+    saveCity,
+    loadCity,
+  };
 }
 

@@ -8,6 +8,7 @@
 import { useEffect } from "react";
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
+import { SaveLoadPanel } from "./components/SaveLoadPanel/SaveLoadPanel";
 import { TilePalette } from "./components/TilePalette/TilePalette";
 import { toolById } from "./config/tiles";
 import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
@@ -36,8 +37,8 @@ const STATUS_COLOR: Record<ConnectionStatus, string> = {
 };
 
 export default function App() {
-  const { state, setTool, placeAt, clearCity, recalculate, reportBounds } =
-    useCityPlanner();
+  const planner = useCityPlanner();
+  const { state, setTool, placeAt } = planner;
   const tool = toolById(state.tool);
 
   // Keyboard shortcuts (ignored while typing in inputs).
@@ -95,7 +96,7 @@ export default function App() {
           />
           <button
             type="button"
-            onClick={clearCity}
+            onClick={planner.clearCity}
             className="rounded-md border border-slate-700 px-2.5 py-1.5 text-xs font-semibold text-slate-300 outline-none transition-colors hover:border-slate-500 hover:text-slate-100 focus-visible:ring-2 focus-visible:ring-sky-400"
           >
             Clear
@@ -115,7 +116,7 @@ export default function App() {
           </span>
           <button
             type="button"
-            onClick={recalculate}
+            onClick={planner.recalculate}
             className="rounded-md border border-amber-400/50 px-2 py-1 font-semibold text-amber-100 outline-none hover:bg-amber-400/10 focus-visible:ring-2 focus-visible:ring-amber-300"
           >
             Retry
@@ -132,6 +133,7 @@ export default function App() {
             </p>
             <TilePalette activeTool={state.tool} onSelectTool={setTool} />
           </div>
+          <SaveLoadPanel planner={planner} />
           <p className="mt-auto px-1 text-[11px] leading-relaxed text-slate-500">
             Roads connect zones. Parks lift nearby housing, industry harms it.
           </p>
@@ -145,7 +147,7 @@ export default function App() {
             hoverColor={hoverColor}
             feedbacks={state.feedbacks}
             onPlace={placeAt}
-            onBoundsChange={reportBounds}
+            onBoundsChange={planner.reportBounds}
           />
           {/* Current action hint (information hierarchy #1, PRD §14A) */}
           <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-slate-700/60 bg-slate-900/85 px-3 py-1 text-[11px] text-slate-300">

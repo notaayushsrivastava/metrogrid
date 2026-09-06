@@ -20,6 +20,8 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app import config
+from app.api.layouts import router as layouts_router
+from app.errors import ApiError
 from app.models.requests import (
     CalculateRequest,
     CalculateResponse,
@@ -27,6 +29,7 @@ from app.models.requests import (
     LatestAction,
     PrototypeCalculateRequest,
 )
+from app.services.congestion import estimate_congestion
 from app.services.scoring import compute_local_delta, compute_scores
 from app.services.sparse import InvalidTileKey, matrix_to_sparse, parse_key
 
@@ -35,6 +38,8 @@ app = FastAPI(
     version=config.APP_VERSION,
     description="Deterministic urban simulation scoring for MetroGrid.",
 )
+
+app.include_router(layouts_router)
 
 
 def _cors_origins() -> list[str]:
@@ -58,15 +63,12 @@ async def _validation_error_handler(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     """FastAPI/Pydantic validation failures → 422 without stack traces."""
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
-
-
-class ApiError(Exception):
-    """Internal error carrying an HTTP status code and safe message."""
-
-    def __init__(self, status_code: int, message: str) -> None:
-        self.status_code = status_code
-        self.message = message
+    errors = exc.errors()
+    # Pydantic stores the raised exception object in ctx.error, which is not
+    # JSON-serializable; drop ctx so the detail is safe to return.
+    for err in errors:
+        err.pop("ctx", None)
+    return JSONResponse(status_code=422, content={"detail": errors})
 
 
 @app.exception_handler(ApiError)
@@ -138,4 +140,5 @@ async def calculate(request: Request) -> CalculateResponse:
     return CalculateResponse(
         global_scores=GlobalScores(**scores),
         local_deltas=delta,  # type: ignore[arg-type]
+        traffic_detail=estimate_congestion(tiles),
     )

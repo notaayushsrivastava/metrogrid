@@ -5,7 +5,14 @@
  * (PRD §22.9-10). All errors surface as `ApiError` with a safe message.
  */
 
-import type { CalculateResponse, GridState, LatestAction } from "../types/city";
+import type {
+  CalculateResponse,
+  GridState,
+  LatestAction,
+  LayoutDetail,
+  LayoutListResponse,
+  SaveLayoutRequest,
+} from "../types/city";
 
 const API_BASE: string =
   (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8000";
@@ -79,4 +86,59 @@ export async function calculateScores(
   } catch {
     throw new ApiError(response.status, "Scoring API returned an invalid response.");
   }
+}
+
+const LAYOUTS_BASE = `${API_BASE}/api/layouts`;
+
+export async function listLayouts(): Promise<LayoutListResponse> {
+  return (await _getJson(`${LAYOUTS_BASE}`)) as LayoutListResponse;
+}
+
+export async function saveLayout(payload: SaveLayoutRequest): Promise<LayoutDetail> {
+  const response = await _postJson(LAYOUTS_BASE, payload);
+  return response.data as LayoutDetail;
+}
+
+export async function loadLayout(layoutId: string): Promise<LayoutDetail> {
+  return (await _getJson(`${LAYOUTS_BASE}/${layoutId}`)) as LayoutDetail;
+}
+
+async function _getJson(url: string): Promise<any> {
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new ApiError(0, "Backend unavailable while fetching.");
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await _safeDetail(response));
+  }
+  return response.json();
+}
+
+async function _postJson(url: string, body: unknown): Promise<{ data: any }> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  } catch {
+    throw new ApiError(0, "Backend unavailable while saving.");
+  }
+  if (!response.ok) {
+    throw new ApiError(response.status, await _safeDetail(response));
+  }
+  return { data: await response.json() };
+}
+
+async function _safeDetail(response: Response): Promise<string> {
+  try {
+    const body = (await response.json()) as { detail?: unknown };
+    if (typeof body?.detail === "string") return body.detail;
+  } catch {
+    // fall through to status text
+  }
+  return `Request failed (HTTP ${response.status}).`;
 }
