@@ -28,6 +28,7 @@ import { toolById } from "./config/tiles";
 import { useTheme } from "./hooks/useTheme";
 import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
+import { LandingPage } from "./components/LandingPage/LandingPage";
 
 // 3D view pulls in three.js + R3F — lazy-load so the initial planner
 // (canvas + scoring) stays lean (PRD Phase 5: 3D must not block the core loop).
@@ -67,6 +68,12 @@ const STATUS_COLOR: Record<ConnectionStatus, string> = {
 };
 
 export default function App() {
+  const { theme, toggleTheme } = useTheme();
+
+  if (window.location.pathname === "/") {
+    return <LandingPage theme={theme} toggleTheme={toggleTheme} />;
+  }
+
   const planner = useCityPlanner();
   const { state, setTool, placeAt } = planner;
   const tool = toolById(state.tool);
@@ -75,7 +82,6 @@ export default function App() {
   const [view3d, setView3d] = useState(false);
   const [armedUrl, setArmedUrl] = useState<string | null>(null);
   const [armedName, setArmedName] = useState<string | null>(null);
-  const { theme, toggleTheme } = useTheme();
   const bannerRef = useRef<HTMLDivElement>(null);
 
   const armModel = planner.armModel;

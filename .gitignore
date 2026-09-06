@@ -7,3 +7,4 @@ node_modules/
 frontend/dist/
 /package.json
 /package-lock.json
+.vscode/
