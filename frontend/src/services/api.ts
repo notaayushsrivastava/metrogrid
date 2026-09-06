@@ -7,6 +7,10 @@
 
 import type {
   CalculateResponse,
+  GisBounds,
+  GisGridOrigin,
+  GisImportRequest,
+  GisImportResponse,
   GridState,
   LatestAction,
   LayoutDetail,
@@ -18,6 +22,8 @@ const API_BASE: string =
   (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8000";
 
 const REQUEST_TIMEOUT_MS = 8000;
+/** GIS fetches go upstream to a map provider — allow a longer window. */
+const GIS_TIMEOUT_MS = 30_000;
 
 export class ApiError extends Error {
   readonly status: number;
@@ -89,6 +95,57 @@ export async function calculateScores(
 }
 
 const LAYOUTS_BASE = `${API_BASE}/api/layouts`;
+
+/**
+ * GIS bounding-box import (PRD §7, §12.2). Returns the imported sparse tile
+ * map; the caller merges it into the authoritative city state.
+ */
+export async function importGisArea(
+  bounds: GisBounds,
+  gridOrigin: GisGridOrigin,
+  signal?: AbortSignal
+): Promise<GisImportResponse> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), GIS_TIMEOUT_MS);
+  signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/api/gis/import`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        bounds,
+        grid_origin: gridOrigin,
+      } satisfies GisImportRequest),
+      signal: controller.signal,
+    });
+  } catch (error) {
+    clearTimeout(timeout);
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError(0, "Import timed out or was cancelled.");
+    }
+    throw new ApiError(0, "Backend unavailable. Is the API server running?");
+  }
+  clearTimeout(timeout);
+
+  if (!response.ok) {
+    let detail = `GIS import failed (HTTP ${response.status}).`;
+    try {
+      const body = (await response.json()) as { detail?: unknown };
+      if (typeof body?.detail === "string") detail = body.detail;
+    } catch {
+      // keep default detail
+    }
+    throw new ApiError(response.status, detail);
+  }
+
+  try {
+    return (await response.json()) as GisImportResponse;
+  } catch {
+    throw new ApiError(response.status, "GIS API returned an invalid response.");
+  }
+}
 
 export async function listLayouts(): Promise<LayoutListResponse> {
   return (await _getJson(`${LAYOUTS_BASE}`)) as LayoutListResponse;

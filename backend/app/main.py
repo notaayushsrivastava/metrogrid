@@ -5,6 +5,7 @@ Endpoints
 * ``GET  /api/health``    — Phase 0 health check.
 * ``POST /api/calculate`` — deterministic scoring; accepts both the Advanced
   Edition sparse contract (§12.1) and the prototype matrix contract (§13).
+* ``POST /api/gis/import`` — deterministic GIS bounding-box import (§7, §12.2).
 
 The scoring engine itself lives in ``app.services`` and never touches HTTP.
 """
@@ -20,6 +21,7 @@ from fastapi.responses import JSONResponse
 from pydantic import ValidationError
 
 from app import config
+from app.api.gis import router as gis_router
 from app.api.layouts import router as layouts_router
 from app.errors import ApiError
 from app.models.requests import (
@@ -40,6 +42,7 @@ app = FastAPI(
 )
 
 app.include_router(layouts_router)
+app.include_router(gis_router)
 
 
 def _cors_origins() -> list[str]:

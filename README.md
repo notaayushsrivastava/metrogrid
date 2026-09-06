@@ -19,24 +19,30 @@ CITY STATE  →  SIMULATION  →  SCORES  →  VISUALIZATION      (PRD §31)
 metrogrid/
 ├── backend/                  # FastAPI + Pydantic (Python 3.10+)
 │   ├── app/
-│   │   ├── main.py           # /api/health, /api/calculate, CORS, errors
-│   │   ├── config.py         # ALL scoring constants centralized (PRD §21)
-│   │   ├── models/           # Tile types + API contracts (PRD §5, §12, §13)
+│   │   ├── main.py           # /api/health, /api/calculate, /api/gis/import, CORS, errors
+│   │   ├── config.py         # ALL scoring + GIS constants centralized (PRD §21)
+│   │   ├── models/           # Tile types + API + GIS contracts (PRD §5, §7, §12)
 │   │   └── services/
 │   │       ├── scoring.py    # aggregation, normalization, local delta
 │   │       ├── resources.py  # proximity scans (PRD §9.2-9.4)
 │   │       ├── traffic.py    # residential↔commercial road connectivity
 │   │       ├── pathfinding.py# weighted A* road graph (PRD §8, §9.6)
 │   │       ├── geometry.py   # Manhattan distance
+│   │       ├── rasterizer.py # deterministic lat/lon→grid rasterization (PRD §7.4-7.5)
+│   │       ├── gis.py        # configured GIS pipeline (Overpass/OSM + sample)
 │   │       └── sparse.py     # "x,y" sparse map parsing/serialization
 │   └── tests/                # pytest: scoring, A*, API, PRD §25.3 flow
-└── frontend/                 # React 19 + TypeScript + Vite + Tailwind v4
+└── frontend/                 # React 19 + TypeScript + Vite + Tailwind v4 + shadcn/ui
     └── src/
         ├── state/cityState.ts        # authoritative sparse Map state
         ├── services/api.ts           # backend client (backend is authoritative)
         ├── utils/coordinates.ts      # screen↔grid via getBoundingClientRect
+        ├── utils/gis.ts              # client-side bounds validation + merge policy
+        ├── lib/motion.ts             # restrained anime.js micro-interactions
         ├── config/                   # tile + score-threshold tokens (once)
-        └── components/               # CityCanvas, TilePalette, Dashboard
+        ├── types/spatial.ts          # spatial extension types (freeform roads, models)
+        ├── components/ui/            # shadcn/ui primitives (Button, Sheet, Tooltip…)
+        └── components/               # CityCanvas, TilePalette, Dashboard, GISImport
 ```
 
 - **Authoritative city state** is a sparse `Map<string, TileObject>` keyed by
@@ -71,8 +77,8 @@ override with `METROGRID_CORS_ORIGINS` (comma-separated).
 ### Tests
 
 ```bash
-cd backend && ../.venv/Scripts/python -m pytest      # 66 tests
-cd frontend && npm test                              # 11 tests (vitest)
+cd backend && ../.venv/Scripts/python -m pytest      # 131 tests
+cd frontend && npm test                              # 30 tests (vitest)
 cd frontend && npm run build                         # typecheck + build
 ```
 
@@ -82,6 +88,21 @@ cd frontend && npm run build                         # typecheck + build
 |------------------|--------|-------------------------------------------|
 | `/api/health`    | GET    | Phase 0 health check                      |
 | `/api/calculate` | POST   | Deterministic scoring (PRD §12.1)         |
+| `/api/gis/import`| POST   | Deterministic GIS bounding-box import (PRD §7, §12.2) |
+
+`/api/gis/import` imports a geographic area into editable grid tiles:
+
+```json
+{ "bounds": { "north": 48.866, "south": 48.858, "east": 2.384, "west": 2.369 },
+  "grid_origin": { "x": 0, "y": 0 } }
+```
+
+```json
+{ "tiles_imported": 1678,
+  "updated_grid": { "0,0": { "type": 42 }, "4,3": { "type": 1 } } }
+```
+
+The backend is stateless here: it rasterizes the area relative to `grid_origin` and returns the imported tile map; the frontend merges it (empty cells only, so hand-placed tiles always win). Configure the provider with `METROGRID_GIS_PROVIDER` (`osm` for real OpenStreetMap data via Overpass, or `offline` for the deterministic sample city). Provider failures return `502`/`504` and never corrupt the city.
 
 `/api/calculate` accepts both contracts:
 
@@ -137,6 +158,10 @@ field beyond the PRD contract) so removals explain why the score changed.
 - [x] **Phase 3** — congestion estimation (PRD §9.7) surfaced as
       ``traffic_detail``; layout save/list/load via Supabase with in-memory
       fallback (PRD §17, migration ``001_city_plans.sql``); Save/Load panel
-- [ ] **Phase 4** — GIS import (`/api/gis/import`)
+- [x] **Phase 4** — GIS import (`/api/gis/import`): deterministic
+      lat/lon→grid rasterization (PRD §7.4-7.5), OpenStreetMap via Overpass +
+      offline sample provider, compact Leaflet bbox picker, premium minimal UI
+      (shadcn/ui, anime.js micro-interactions), spatial extension types for
+      future freeform roads / oriented models; 131 backend + 30 frontend tests
 - [ ] **Phase 5** — optional 3D (`.glb`/`.gltf`, React Three Fiber)
 - [ ] **Phase 6** — polish, a11y audit, demo seed city

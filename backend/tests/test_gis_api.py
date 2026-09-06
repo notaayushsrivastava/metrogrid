@@ -1,0 +1,228 @@
+"""GIS import API tests (PRD §7, §12.2, §20.2, §25.1.11)."""
+
+import pytest
+from fastapi.testclient import TestClient
+
+from app import config
+from app.main import app
+from app.services import gis as gis_service
+from app.services.rasterizer import GeoBounds
+
+client = TestClient(app)
+
+BOUNDS = {"north": 12.98, "south": 12.97, "east": 80.25, "west": 80.24}
+
+
+@pytest.fixture(autouse=True)
+def _sample_provider(monkeypatch):
+    """Pin the deterministic sample provider for every API test."""
+    monkeypatch.setattr(config, "GIS_DEFAULT_PROVIDER", "sample")
+
+
+class TestGisImportContract:
+    def test_import_returns_prd_response_shape(self):
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert set(body.keys()) == {"tiles_imported", "updated_grid"}
+        assert body["tiles_imported"] > 0
+        assert isinstance(body["updated_grid"], dict)
+        for key, tile in body["updated_grid"].items():
+            x_str, y_str = key.split(",")
+            int(x_str), int(y_str)  # keys are "x,y"
+            assert set(tile.keys()) == {"type"}
+            assert isinstance(tile["type"], int)
+
+    def test_import_is_deterministic(self):
+        payload = {"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}}
+        first = client.post("/api/gis/import", json=payload).json()
+        for _ in range(3):
+            assert client.post("/api/gis/import", json=payload).json() == first
+
+    def test_origin_shifts_grid_coordinates(self):
+        at_zero = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        ).json()
+        at_offset = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 500, "y": -500}},
+        ).json()
+        assert at_zero["tiles_imported"] == at_offset["tiles_imported"]
+        first_key = next(iter(at_zero["updated_grid"]))
+        first_offset_key = next(iter(at_offset["updated_grid"]))
+        x0, y0 = map(int, first_key.split(","))
+        x1, y1 = map(int, first_offset_key.split(","))
+        assert (x1 - x0, y1 - y0) == (500, -500)
+
+    def test_all_imported_types_are_supported(self):
+        body = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        ).json()
+        for tile in body["updated_grid"].values():
+            assert tile["type"] in config.VALID_TILE_TYPES
+
+
+class TestGisImportValidation:
+    def test_inverted_bounds_rejected_422(self):
+        response = client.post(
+            "/api/gis/import",
+            json={
+                "bounds": {
+                    "north": 12.97,
+                    "south": 12.98,
+                    "east": 80.25,
+                    "west": 80.24,
+                },
+                "grid_origin": {"x": 0, "y": 0},
+            },
+        )
+        assert response.status_code == 422
+
+    def test_oversized_area_rejected_422(self):
+        response = client.post(
+            "/api/gis/import",
+            json={
+                "bounds": {
+                    "north": 13.98,
+                    "south": 12.97,
+                    "east": 80.25,
+                    "west": 80.24,
+                },
+                "grid_origin": {"x": 0, "y": 0},
+            },
+        )
+        assert response.status_code == 422
+
+    def test_out_of_range_latitude_rejected_422(self):
+        response = client.post(
+            "/api/gis/import",
+            json={
+                "bounds": {
+                    "north": 200.0,
+                    "south": 12.97,
+                    "east": 80.25,
+                    "west": 80.24,
+                },
+                "grid_origin": {"x": 0, "y": 0},
+            },
+        )
+        assert response.status_code == 422
+
+    def test_unknown_field_rejected_422(self):
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}, "extra": True},
+        )
+        assert response.status_code == 422
+
+    def test_unknown_provider_rejected_400(self, monkeypatch):
+        monkeypatch.setattr(config, "GIS_DEFAULT_PROVIDER", "bogus")
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        )
+        assert response.status_code == 400
+        assert "provider" in response.json()["detail"].lower()
+
+    def test_source_unavailable_maps_to_502(self, monkeypatch):
+        provider = gis_service.SampleProvider()
+
+        def fail(_bounds):
+            raise gis_service.GisSourceUnavailable("map data source is unreachable")
+
+        monkeypatch.setattr(provider, "fetch_features", fail)
+        monkeypatch.setattr(gis_service, "get_provider", lambda: provider)
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        )
+        assert response.status_code == 502
+        assert isinstance(response.json()["detail"], str)
+
+    def test_source_timeout_maps_to_504(self, monkeypatch):
+        provider = gis_service.SampleProvider()
+
+        def fail(_bounds):
+            raise gis_service.GisSourceUnavailable("timed out", timeout=True)
+
+        monkeypatch.setattr(provider, "fetch_features", fail)
+        monkeypatch.setattr(gis_service, "get_provider", lambda: provider)
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        )
+        assert response.status_code == 504
+
+    def test_empty_results_return_zero_tiles(self, monkeypatch):
+        provider = gis_service.SampleProvider()
+        monkeypatch.setattr(provider, "fetch_features", lambda _bounds: [])
+        monkeypatch.setattr(gis_service, "get_provider", lambda: provider)
+        response = client.post(
+            "/api/gis/import",
+            json={"bounds": BOUNDS, "grid_origin": {"x": 0, "y": 0}},
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["tiles_imported"] == 0
+        assert body["updated_grid"] == {}
+
+
+class TestOverpassParsing:
+    def test_elements_convert_to_features_deterministically(self):
+        import httpx
+
+        elements = [
+            {
+                "type": "way",
+                "id": 2,
+                "tags": {"highway": "motorway"},
+                "geometry": [
+                    {"lon": 80.24, "lat": 12.98},
+                    {"lon": 80.25, "lat": 12.98},
+                ],
+            },
+            {
+                "type": "way",
+                "id": 1,
+                "tags": {"building": "yes"},
+                "geometry": [
+                    {"lon": 80.241, "lat": 12.975},
+                    {"lon": 80.242, "lat": 12.975},
+                    {"lon": 80.242, "lat": 12.974},
+                    {"lon": 80.241, "lat": 12.974},
+                ],
+            },
+        ]
+        features = gis_service.overpass_elements_to_features(elements)
+        # Sorted by element id regardless of input order.
+        assert [f.order[0] for f in features] == [1, 2]
+        assert features[0].closed is True
+        assert features[0].tile_type == config.RESIDENTIAL
+        assert features[1].closed is False
+        assert features[1].tile_type == config.ROAD_HIGHWAY
+
+        # HTTP 429 maps to GisSourceUnavailable.
+        class FakeResponse:
+            status_code = 429
+
+        provider = gis_service.OverpassProvider(url="http://unit.test", timeout=1)
+        original_post = httpx.post
+        try:
+            httpx.post = lambda *a, **k: FakeResponse()
+            with pytest.raises(gis_service.GisSourceUnavailable):
+                provider.fetch_features(GeoBounds(north=1, south=0, east=1, west=0))
+        finally:
+            httpx.post = original_post
+
+    def test_unrelated_elements_are_skipped(self):
+        elements = [
+            {"type": "node", "id": 1, "lat": 12.97, "lon": 80.24},
+            {"type": "way", "id": 2, "tags": {"waterway": "river"}, "geometry": []},
+        ]
+        assert gis_service.overpass_elements_to_features(elements) == []
+

@@ -5,12 +5,21 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { calculateScores, listLayouts, loadLayout, saveLayout } from "../services/api";
+import {
+  calculateScores,
+  importGisArea,
+  listLayouts,
+  loadLayout,
+  saveLayout,
+} from "../services/api";
+import { mergeImportedTiles } from "../utils/gis";
 import {
   GRID_MAX,
   GRID_MIN,
   TILE,
   type Feedback,
+  type GisBounds,
+  type GisGridOrigin,
   type GlobalScores,
   type GridBounds,
   type GridState,
@@ -62,7 +71,8 @@ type CityAction =
   | { type: "LAYOUTS_LOADING" }
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
-  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }> };
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }> }
+  | { type: "IMPORT_MERGED"; tiles: GridState };
 
 export const initialState: CityState = {
   tiles: new Map(),
@@ -167,6 +177,10 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
       return { ...state, tiles, feedbacks: [] };
     }
 
+    case "IMPORT_MERGED":
+      // Commit merged GIS tiles into the rendered state atomically.
+      return { ...state, tiles: action.tiles, feedbacks: [] };
+
     default:
       return state;
   }
@@ -185,6 +199,16 @@ export interface CityPlanner {
   refreshLayouts: () => void;
   saveCity: (name: string) => Promise<void>;
   loadCity: (layoutId: string) => Promise<void>;
+  /**
+   * GIS bounding-box import (PRD §7, Phase 4). Fetches the imported sparse
+   * tiles, merges them into the authoritative state (existing tiles win), and
+   * re-scores. Returns counts for compact UI feedback. Never mutates the city
+   * on failure — a failed import leaves the current state untouched.
+   */
+  importGis: (
+    bounds: GisBounds,
+    origin: GisGridOrigin
+  ) => Promise<{ imported: number; added: number }>;
 }
 
 const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
@@ -342,6 +366,27 @@ export function useCityPlanner(): CityPlanner {
     );
   }, [runCalculation]);
 
+  const importGis = useCallback(
+    async (bounds: GisBounds, origin: GisGridOrigin) => {
+      const response = await importGisArea(bounds, origin);
+      const { merged, added } = mergeImportedTiles(
+        stateRef.current.tiles,
+        response.updated_grid
+      );
+      if (added > 0) {
+        const next = { ...stateRef.current, tiles: merged };
+        stateRef.current = next;
+        // Commit imported tiles to the rendered state atomically so the
+        // canvas and header refresh (PRD §19 single authoritative state).
+        dispatch({ type: "IMPORT_MERGED", tiles: merged });
+      }
+      // Re-score after import (no latest action → no local delta).
+      void runCalculation(added > 0 ? merged : new Map(stateRef.current.tiles), null);
+      return { imported: response.tiles_imported, added };
+    },
+    [runCalculation]
+  );
+
   // Initial connection probe: score the empty city once on mount.
   useEffect(() => {
     void runCalculation(new Map(), null);
@@ -357,6 +402,7 @@ export function useCityPlanner(): CityPlanner {
     refreshLayouts,
     saveCity,
     loadCity,
+    importGis,
   };
 }
 

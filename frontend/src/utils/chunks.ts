@@ -9,13 +9,19 @@
  */
 
 import { CHUNK_SIZE } from "../config/tiles";
-import type { GridState, TileType } from "../types/city";
+import type { GridState, TileObject, TileType } from "../types/city";
 import type { GridBounds } from "./coordinates";
 
 export interface ChunkEntry {
   x: number;
   y: number;
   type: TileType;
+  /**
+   * Full TileObject reference (same object from the sparse map — zero copy).
+   * Carries optional visual transform metadata (PRD Phase 4 spatial
+   * extensibility) so renderers can honor rotation without extra lookups.
+   */
+  tile: TileObject;
 }
 
 export function chunkKeyFor(x: number, y: number): string {
@@ -32,10 +38,11 @@ export function buildChunkIndex(tiles: GridState): Map<string, ChunkEntry[]> {
     const [x, y] = key.split(",").map(Number);
     const chunkKey = chunkKeyFor(x, y);
     const entries = index.get(chunkKey);
+    const entry: ChunkEntry = { x, y, type: tile.type, tile };
     if (entries) {
-      entries.push({ x, y, type: tile.type });
+      entries.push(entry);
     } else {
-      index.set(chunkKey, [{ x, y, type: tile.type }]);
+      index.set(chunkKey, [entry]);
     }
   });
   return index;

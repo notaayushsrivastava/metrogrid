@@ -28,6 +28,11 @@ export const GRID_MAX = 2147483647;
 export interface TileObject {
   type: TileType;
   model_url?: string;
+  /**
+   * Optional visual transform (PRD Phase 4 spatial extensibility).
+   * Data-only decoration: scoring and placement logic never read this.
+   */
+  transform?: import("./spatial").ModelTransform;
 }
 
 /** Sparse map key format: "x,y" (PRD §5.1). */
@@ -111,6 +116,32 @@ export type ToolId =
   | "industrial"
   | "road"
   | "erase";
+
+/** Geographic bounding box for GIS import (PRD §7.2, §12.2). */
+export interface GisBounds {
+  north: number;
+  south: number;
+  east: number;
+  west: number;
+}
+
+/** Sparse-grid anchor the imported area maps onto (PRD §7.4). */
+export interface GisGridOrigin {
+  x: number;
+  y: number;
+}
+
+/** `POST /api/gis/import` request (PRD §12.2, exact contract). */
+export interface GisImportRequest {
+  bounds: GisBounds;
+  grid_origin: GisGridOrigin;
+}
+
+/** `POST /api/gis/import` response (PRD §12.2, exact contract). */
+export interface GisImportResponse {
+  tiles_imported: number;
+  updated_grid: Record<string, { type: number }>;
+}
 
 /** Transient floating feedback at a placement (PRD §11). */
 export interface Feedback {

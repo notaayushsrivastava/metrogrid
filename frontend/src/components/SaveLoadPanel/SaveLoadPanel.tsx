@@ -20,9 +20,14 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
+  // Refresh the layout list once on mount. Depending on `planner` directly
+  // would re-run on every render (the planner object identity changes), which
+  // caused an infinite refresh loop (PRD Phase 4: minimal React re-renders).
+  // `planner.refreshLayouts` is a stable useCallback, so this fires exactly once.
   useEffect(() => {
     void planner.refreshLayouts();
-  }, [planner]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [planner.refreshLayouts]);
 
   const onSave = async () => {
     const trimmed = name.trim();

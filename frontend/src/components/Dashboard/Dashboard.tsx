@@ -12,6 +12,8 @@ import {
 } from "../../config/scores";
 import type { GlobalScores, TrafficDetail } from "../../types/city";
 import type { MetricMovement } from "../../state/cityState";
+import { useEffect, useRef } from "react";
+import { pulseChip } from "@/lib/motion";
 
 interface DashboardProps {
   scores: GlobalScores | null;
@@ -55,6 +57,21 @@ function Movement({ value }: { value: number | undefined }) {
 }
 
 export function Dashboard({ scores, movement, calculating, congestion, variant = "bar" }: DashboardProps) {
+  // anime.js pulse on moved metrics (PRD Phase 4: restrained score feedback).
+  const chipRefs = useRef<Partial<Record<ScoreMetric, HTMLDivElement | null>>>({});
+  const prevMovement = useRef<MetricMovement | null>(null);
+  useEffect(() => {
+    if (!movement) return;
+    for (const metric of SCORE_METRICS) {
+      const delta = movement[metric];
+      const previous = prevMovement.current?.[metric] ?? 0;
+      if (delta !== 0 && delta !== previous) {
+        pulseChip(chipRefs.current[metric] ?? null);
+      }
+    }
+    prevMovement.current = movement;
+  }, [movement]);
+
   if (variant === "chip") {
     return (
       <div className="flex items-center gap-2" aria-label="City scores">
@@ -64,7 +81,10 @@ export function Dashboard({ scores, movement, calculating, congestion, variant =
           return (
             <div
               key={metric}
-              className="flex items-center gap-1 rounded-md border border-slate-700/70 bg-slate-900/70 px-2 py-1"
+              ref={(el) => {
+                chipRefs.current[metric as ScoreMetric] = el;
+              }}
+              className="flex items-center gap-1 rounded-md border border-border/70 bg-card/70 px-2 py-1 backdrop-blur"
               title={METRIC_LABELS[metric as ScoreMetric]}
             >
               <span

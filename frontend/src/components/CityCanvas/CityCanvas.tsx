@@ -14,6 +14,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BASE_TILE, DEFAULT_VIEW_SPAN, TILE_META } from "../../config/tiles";
 import { tileKey } from "../../state/cityState";
 import type { Feedback, GridState, TileType } from "../../types/city";
+import cityEmptyUrl from "../../assets/city-empty.png";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   cellSize,
   cellToScreenPx,
@@ -102,12 +108,25 @@ function drawTile(
   y: number,
   px: number,
   py: number,
-  size: number
+  size: number,
+  /** Optional visual yaw in degrees (PRD Phase 4 spatial extensibility). */
+  rotationDeg = 0
 ): void {
   const meta = TILE_META[type as Exclude<TileType, 0>];
   const inset = 1;
   const s = size - inset * 2;
   const r = Math.max(2, Math.floor(size * 0.12));
+
+  // Future building-model orientation: rotate the base rendering around the
+  // cell center when transform metadata is present. Data-only decoration —
+  // scoring never sees this (PRD §31.1).
+  const rotated = rotationDeg !== 0;
+  if (rotated) {
+    ctx.save();
+    ctx.translate(px + size / 2, py + size / 2);
+    ctx.rotate((rotationDeg * Math.PI) / 180);
+    ctx.translate(-(px + size / 2), -(py + size / 2));
+  }
 
   ctx.beginPath();
   ctx.roundRect(px + inset, py + inset, s, s, r);
@@ -152,6 +171,7 @@ function drawTile(
       }
     }
     ctx.setLineDash([]);
+    if (rotated) ctx.restore();
     return;
   }
 
@@ -161,6 +181,7 @@ function drawTile(
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
   ctx.fillText(meta.glyph, px + size / 2, py + size / 2 + 1);
+  if (rotated) ctx.restore();
 }
 
 
@@ -309,7 +330,17 @@ export function CityCanvas({
         if (px + cell < 0 || px > cssWidth || py + cell < 0 || py > cssHeight) {
           continue; // per-tile cull within the chunk's margin
         }
-        drawTile(ctx, tiles, entry.type, entry.x, entry.y, px, py, cell);
+        drawTile(
+          ctx,
+          tiles,
+          entry.type,
+          entry.x,
+          entry.y,
+          px,
+          py,
+          cell,
+          entry.tile?.transform?.rotation?.y ?? 0
+        );
       }
     }
 
@@ -499,67 +530,91 @@ export function CityCanvas({
           );
         })}
 
-      {/* Zoom controls (always accessible; a11y labelled). */}
+      {/* Zoom controls (always accessible; icon-only actions get tooltips —
+          PRD Phase 4 accessibility). */}
       {camera && (
-        <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-md border border-slate-700 bg-slate-900/90 text-slate-200 shadow-lg">
-          <button
-            type="button"
-            aria-label="Zoom in"
-            title="Zoom in"
-            onClick={() => {
-              const cam = cameraRef.current;
-              if (cam)
-                setCamera(zoomAt(cam, viewport.width / 2, viewport.height / 2, 1.25));
-            }}
-            className="px-3 py-1.5 text-sm hover:bg-slate-700/60 focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            +
-          </button>
-          <span className="border-y border-slate-700 px-1 py-0.5 text-center text-[10px] tabular-nums text-slate-400">
+        <div className="absolute right-3 top-3 flex flex-col overflow-hidden rounded-md border border-border bg-popover/90 text-popover-foreground shadow-lg backdrop-blur">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Zoom in"
+                onClick={() => {
+                  const cam = cameraRef.current;
+                  if (cam)
+                    setCamera(zoomAt(cam, viewport.width / 2, viewport.height / 2, 1.25));
+                }}
+                className="px-3 py-1.5 text-sm outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                +
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Zoom in</TooltipContent>
+          </Tooltip>
+          <span className="border-y border-border px-1 py-0.5 text-center font-mono text-[10px] tabular-nums text-muted-foreground">
             {Math.round((camera.zoom / camera.tileSize) * BASE_TILE * 100)}%
           </span>
-          <button
-            type="button"
-            aria-label="Zoom out"
-            title="Zoom out"
-            onClick={() => {
-              const cam = cameraRef.current;
-              if (cam)
-                setCamera(zoomAt(cam, viewport.width / 2, viewport.height / 2, 0.8));
-            }}
-            className="px-3 py-1.5 text-sm hover:bg-slate-700/60 focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            −
-          </button>
-          <button
-            type="button"
-            aria-label="Reset view"
-            title="Reset view"
-            onClick={() => setCamera(fitCamera(tiles, viewport))}
-            className="px-3 py-1.5 text-[10px] font-bold hover:bg-slate-700/60 focus-visible:ring-2 focus-visible:ring-sky-400"
-          >
-            ⟳
-          </button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Zoom out"
+                onClick={() => {
+                  const cam = cameraRef.current;
+                  if (cam)
+                    setCamera(zoomAt(cam, viewport.width / 2, viewport.height / 2, 0.8));
+                }}
+                className="px-3 py-1.5 text-sm outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                −
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Zoom out</TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                aria-label="Reset view"
+                onClick={() => setCamera(fitCamera(tiles, viewport))}
+                className="px-3 py-1.5 text-[10px] font-bold outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                ⟳
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>Reset view</TooltipContent>
+          </Tooltip>
         </div>
       )}
 
-      {/* Live coordinate readout. */}
+      {/* Live coordinate readout (mono, data-styled). */}
       {hover && (
-        <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-slate-900/80 px-1.5 py-0.5 text-[10px] tabular-nums text-slate-400">
+        <div className="pointer-events-none absolute bottom-2 left-2 rounded bg-card/80 px-1.5 py-0.5 font-mono text-[10px] tabular-nums text-muted-foreground">
           {hover.x}, {hover.y}
         </div>
       )}
 
-      {/* Empty state (PRD §1.3 Phase 0). */}
+      {/* Empty state (PRD §1.3 Phase 0, Phase 4 polish). Illustration from a
+          Runway-generated visual treatment; purely decorative. */}
       {tiles.size === 0 && (
-        <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
-          <div className="rounded-xl border border-slate-700/60 bg-slate-900/80 px-5 py-4 text-center">
-            <p className="text-sm font-semibold text-slate-200">
-              Pick a tool and click the grid
+        <div className="mg-rise pointer-events-none absolute inset-0 flex items-center justify-center p-4">
+          <div className="flex max-w-md flex-col items-center gap-3 rounded-xl border border-border/70 bg-card/85 px-6 py-5 text-center shadow-xl backdrop-blur">
+            <img
+              src={cityEmptyUrl}
+              alt=""
+              aria-hidden="true"
+              loading="lazy"
+              className="h-24 w-auto rounded-lg opacity-90"
+            />
+            <p className="font-display text-base font-bold text-foreground">
+              Design a city. Watch it respond.
             </p>
-            <p className="mt-1 text-xs text-slate-400">
-              Place zones and roads — scores update instantly. Scroll to zoom,
-              drag to pan.
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              Pick a tool and click the grid — scores update on every placement.
+              Scroll to zoom, drag to pan.
+            </p>
+            <p className="font-mono text-[10px] tracking-wide text-muted-foreground/70">
+              1–5 zones · V select · X erase
             </p>
           </div>
         </div>

@@ -126,6 +126,46 @@ METRIC_PRIORITY = ("livability", "resources", "traffic")
 # ---------------------------------------------------------------------------
 # API / app
 # ---------------------------------------------------------------------------
+# Local delta (PRD §11)
+# ---------------------------------------------------------------------------
+# Deterministic tie-break order when several metrics move by the same
+# absolute amount.
+METRIC_PRIORITY = ("livability", "resources", "traffic")
+
+# ---------------------------------------------------------------------------
+# GIS import (PRD §7, §12.2)
+# ---------------------------------------------------------------------------
+# Active provider: "osm" (OpenStreetMap via the Overpass API — no API key
+# required) or "sample" (deterministic offline synthetic city for demos and
+# tests). Selected through the environment; never hardcoded per call site.
+GIS_PROVIDER_ENV = "METROGRID_GIS_PROVIDER"
+GIS_DEFAULT_PROVIDER = "osm"
+
+# Overpass endpoint and client behavior (overridable for mirrors/tests).
+OVERPASS_URL_ENV = "METROGRID_OVERPASS_URL"
+OVERPASS_DEFAULT_URL = "https://overpass-api.de/api/interpreter"
+GIS_REQUEST_TIMEOUT_S = 25.0
+
+# Bounding-box guards (PRD §7.2, §22.6: validate all external input). One
+# grid cell ≈ GIS_TILE_METERS on the ground; spans are clamped so a request
+# can never rasterize an unbounded number of cells.
+MAX_BBOX_SPAN_DEG = 0.1
+MAX_BBOX_AREA_DEG2 = 0.01
+GIS_TILE_METERS = 15.0
+MIN_GRID_SPAN = 4
+MAX_GRID_SPAN = 220
+
+# Road subclasses render with a wider stroke during rasterization (avenues
+# and highways occupy a 2-cell corridor, PRD §7.5 hierarchy).
+GIS_WIDE_ROAD_TYPES = frozenset({ROAD_AVENUE, ROAD_HIGHWAY})
+
+# Hard cap on tiles imported per request (PRD §22.4-style size guard).
+MAX_IMPORTED_TILES = 40_000
+
+# ---------------------------------------------------------------------------
+# API / app
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 APP_VERSION = "0.1.0"
 
 # Frontend dev origins allowed to call the API. Override with a

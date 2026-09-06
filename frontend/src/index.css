@@ -1,12 +1,62 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
-/* ---- MetroGrid design tokens ------------------------------------------- */
+/* ---- MetroGrid design system (PRD Phase 4: shadcn tokens, customized) --- */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* Type system: characterful display + workhorse UI + mono for data. */
+  --font-sans: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Bricolage Grotesque", "Instrument Sans", ui-sans-serif, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", monospace;
+}
+
 :root {
-  --mg-bg: #020617;
-  --mg-surface: #0f172a;
-  --mg-border: #1e293b;
-  --mg-text: #e2e8f0;
-  --mg-muted: #94a3b8;
+  --radius: 0.55rem;
+
+  --background: #020617;
+  --foreground: #e2e8f0;
+
+  --card: #0b1220;
+  --card-foreground: #e2e8f0;
+  --popover: #0b1220;
+  --popover-foreground: #e2e8f0;
+
+  --primary: #2dd4bf;
+  --primary-foreground: #022c22;
+  --secondary: #16213a;
+  --secondary-foreground: #cbd5e1;
+  --muted: #101a2e;
+  --muted-foreground: #8ea0b8;
+  --accent: #0e7490;
+  --accent-foreground: #cffafe;
+  --destructive: #f87171;
+
+  --border: #1c2941;
+  --input: #24344f;
+  --ring: #38bdf8;
 }
 
 html,
@@ -17,22 +67,21 @@ body,
 
 body {
   margin: 0;
-  background-color: var(--mg-bg);
-  color: var(--mg-text);
-  font-family:
-    ui-sans-serif,
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 /* Keyboard-focus visibility (PRD §14A accessibility). */
 :focus-visible {
-  outline: 2px solid #38bdf8;
+  outline: 2px solid var(--ring);
   outline-offset: 2px;
+}
+
+::selection {
+  background: rgba(45, 212, 191, 0.28);
 }
 
 /* Floating placement feedback: float upward + fade out (PRD §11). */
@@ -58,10 +107,62 @@ body {
   animation: feedback-pop 1.5s ease-out forwards;
 }
 
+/* Soft entrance for persistent panels (restrained, once). */
+@keyframes mg-rise {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mg-rise {
+  animation: mg-rise 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+/* ---- Leaflet dark treatment (GIS import map) ---------------------------- */
+.leaflet-container {
+  background: #0b1220;
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.leaflet-tile {
+  filter: saturate(0.72) brightness(0.82) contrast(1.06);
+}
+
+.leaflet-container a.leaflet-control-attribution {
+  background: rgba(2, 6, 23, 0.75);
+  color: #64748b;
+  font-size: 9px;
+}
+
+.leaflet-container a.leaflet-control-attribution:hover {
+  color: #94a3b8;
+}
+
+.leaflet-bar {
+  border: 1px solid #1c2941 !important;
+  box-shadow: none !important;
+}
+
+.leaflet-bar a {
+  background: #0b1220;
+  color: #cbd5e1;
+  border-bottom-color: #1c2941;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .feedback-pop {
     animation-duration: 0.01s;
     animation-fill-mode: forwards;
     opacity: 0;
   }
+  .mg-rise {
+    animation: none;
+  }
 }
+

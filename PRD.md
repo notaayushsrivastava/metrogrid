@@ -1,7 +1,7 @@
 # MetroGrid — Advanced Edition
 ## Product Requirements Document (PRD)
 
-**Version:** 2.0 — Progressive Prototype-First Edition  
+**Version:** 2.1 — Progressive Prototype-First Edition + Phase 4 Design & Spatial Extension Directives  
 **Purpose:** Progressive, prototype-first specification for AI coding agents and human developers; build a working vertical slice first, validate it, then extend it incrementally  
 **Target build window:** 48 hours for the first demoable prototype, followed by progressive extensions  
 **Primary goal:** Build a polished, minimal, demoable urban simulation prototype first, then progressively extend the same foundation with sparse-grid scaling, richer scoring, GIS ingestion, persistence, and optional 3D assets.
@@ -140,11 +140,98 @@ Exit criteria:
 
 * New persistence and road tools do not force a redesign of the main planner canvas or cover it with oversized UI.
 
-### Phase 4 — GIS Import
+### Phase 4 — GIS Import, Premium Minimal UI, and Spatial Extensibility
 
-Goal: let users start from real geographic context.
+Goal: let users start from real geographic context while upgrading the frontend into a polished, stylish, minimal planning experience and establishing clean extension points for future freeform roads and independently oriented 3D building models.
+
+#### Mandatory Cline Skills
+
+Before implementing Phase 4, Cline MUST inspect and actively use the available:
+
+- **Web Design skill**
+- **Frontend skill**
+
+Apply these skills to visual hierarchy, layout composition, responsive behavior, typography, spacing, component architecture, accessibility, interaction design, state design, frontend maintainability, and performance-conscious rendering.
+
+These skills supplement the MetroGrid PRD and MUST NOT override explicit MetroGrid requirements or the existing architecture.
+
+When skill recommendations conflict with the PRD, preserve the PRD and architecture.
+
+#### UI / Design Stack
+
+Use the following technologies selectively and intentionally:
+
+- **shadcn/ui** for accessible, composable UI primitives such as buttons, tooltips, dropdowns, selects, popovers, tabs, compact dialogs, progress/status controls, and form controls.
+- **Runway** for visual/design assistance and tasteful visual treatment where it materially improves the product.
+- **anime.js** for lightweight, restrained micro-interactions.
+- **Watermelon UI** where it provides a useful visual or interaction component compatible with the existing stack.
+
+Do not create multiple competing design systems. Customize components into one coherent MetroGrid visual language.
+
+Before installing anything, inspect the existing dependencies and reuse what is already available where practical.
+
+#### Visual Direction
+
+MetroGrid should feel:
+
+- Minimal
+- Premium
+- Modern
+- Spatial
+- Clean
+- Focused
+- Fast
+- Visually understandable
+
+Prioritize the city canvas above secondary information.
+
+Use:
+
+- Strong visual hierarchy
+- Compact controls
+- Consistent typography
+- Consistent spacing
+- Subtle borders
+- Restrained shadows
+- Consistent corner radius
+- Clear hover, active, selected, disabled, loading, and error states
+- Thoughtful empty states
+- Compact contextual feedback
+
+Avoid:
+
+- Dashboard-heavy layouts
+- Oversized cards
+- Oversized modal dialogs
+- Excessive gradients
+- Excessive shadows
+- Excessive animation
+- Decorative UI that does not support planning
+- Controls that cover the active city area
+- Needless clicks
+- Multiple competing toolbars
+
+The application should feel intentionally designed rather than assembled from unrelated component-library defaults.
+
+#### anime.js Interaction Direction
+
+Use anime.js only where it improves feedback or spatial understanding, including where appropriate:
+
+- Tile placement feedback
+- Floating score deltas
+- Tool-selection transitions
+- GIS import transitions
+- Score changes
+- Success/error feedback
+- Subtle UI reveals
+- Spatial placement previews
+
+Animations MUST be fast, subtle, non-blocking, performance-conscious, and compatible with `prefers-reduced-motion`.
+
+#### GIS Deliverables
 
 Deliver:
+
 - Map selection UI.
 - Bounding-box selection.
 - GIS ingestion.
@@ -152,12 +239,258 @@ Deliver:
 - Deterministic rasterization.
 - Metadata-to-tile mapping.
 - Merge imported data into the existing sparse grid.
+- Polished loading, success, partial/empty, validation, failure, and retry states.
 
 GIS MUST remain an extension of the planner, not a separate editing product.
 
-Exit criteria:
-- A selected area can be imported and then edited using the same planner tools.
+#### GIS User Flow
+
+```text
+Open GIS Import
+    ↓
+Interactive Map
+    ↓
+Select Bounding Box
+    ↓
+Validate Bounds
+    ↓
+Request GIS Data
+    ↓
+Vector Geometry
+    ↓
+Coordinate Transformation
+    ↓
+Deterministic Rasterization
+    ↓
+Metadata → Tile Types
+    ↓
+Merge Into Existing Sparse Grid
+    ↓
+Recalculate Scores
+    ↓
+Continue Editing
+```
+
+The existing city state MUST remain recoverable if GIS import fails.
+
+Prefer a compact GIS button plus a contextual side panel, popover, or sheet rather than a large multi-step wizard. Keep the planner canvas visible whenever reasonably possible.
+
+#### shadcn/ui Requirements
+
+Use shadcn/ui selectively for reusable controls and states. Establish shared MetroGrid tokens for:
+
+- Typography
+- Spacing
+- Border radius
+- Control heights
+- Shadows
+- Surface/background treatments
+- Motion timing
+- Focus states
+
+Do not leave default shadcn styling untouched if it conflicts with the MetroGrid visual language.
+
+#### Responsive Design
+
+Use the Web Design and Frontend skills to support desktop, laptop, tablet, and mobile layouts.
+
+On small screens:
+
+- Keep the city canvas dominant.
+- Move tools into a compact bottom toolbar where appropriate.
+- Collapse advanced controls.
+- Avoid permanent side panels consuming most of the viewport.
+- Maintain touch-friendly targets.
+
+#### Spatial Extensibility: Freeform Roads
+
+Phase 4 MUST establish an architecture that does not permanently assume roads are axis-aligned grid tiles.
+
+The current road subtype system remains valid and scoring/pathfinding remain deterministic, but rendering and interaction should be designed so future roads can support:
+
+- Horizontal orientation
+- Vertical orientation
+- Diagonal orientation
+- Arbitrary angles
+- Curved paths
+- Multi-segment geometry
+- Variable road widths
+- Endpoints and nodes
+- Intersections
+- Snapping
+- Editing
+
+A suitable conceptual extension is:
+
+```typescript
+interface RoadGeometry {
+  id: string;
+  type: number;
+  points: Array<{
+    x: number;
+    y: number;
+  }>;
+  width?: number;
+}
+```
+
+This is an extension direction, not permission to unnecessarily replace the authoritative sparse grid during Phase 4.
+
+Road visual orientation must eventually be derived from geometry rather than hard-coded as horizontal/vertical tile artwork.
+
+The road subtype still controls speed/capacity semantics; orientation is visual/spatial data and must not become an arbitrary scoring bonus.
+
+#### Spatial Extensibility: Future Building Model Orientation
+
+When `.glb` / `.gltf` models are introduced, the architecture MUST allow each model to have its own independent transform.
+
+The existing:
+
+```typescript
+model_url?: string;
+```
+
+may be extended conceptually with transform metadata such as:
+
+```typescript
+interface ModelTransform {
+  rotation?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  scale?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+  positionOffset?: {
+    x: number;
+    y: number;
+    z: number;
+  };
+}
+```
+
+Requirements:
+
+- Each model can have its own rotation.
+- Building orientation is independent of tile orientation.
+- Models may face roads or other directions.
+- Rotation is stored as data, not temporary UI state.
+- Transform metadata remains separate from simulation/scoring semantics.
+- A failed model load MUST NOT corrupt the city state.
+
+Do not expose complex rotation tooling in the main UI during Phase 4 unless needed. Establish clean extension points without premature over-engineering.
+
+#### Spatial Object Principle
+
+Prepare the frontend around:
+
+```text
+Tile Position
++
+Optional Geometry
++
+Optional Visual Transform
+=
+Rendered Spatial Object
+```
+
+This should permit future:
+
+- Freeform roads
+- Rotated buildings
+- Variable building dimensions
+- Curved infrastructure
+- GIS-derived vector geometry
+- Rich 3D assets
+
+without rewriting the city-state architecture.
+
+#### Interaction Direction
+
+The core flow remains:
+
+```text
+Select Tool
+    ↓
+Place
+    ↓
+See Consequence
+```
+
+Future expressive placement should remain compatible with:
+
+```text
+Road:
+Start → Draw/Drag Path → Adjust Geometry → Commit
+
+Building:
+Select → Place → Rotate/Adjust Orientation → Commit
+```
+
+Do not implement a complicated geometry editor merely for Phase 4 appearance.
+
+#### Error and Safety UX
+
+The interface MUST gracefully handle:
+
+- Backend unavailable
+- GIS import failure
+- Invalid bounds
+- Empty GIS results
+- Invalid placement
+- Invalid model
+- Model loading failure
+- Save failure
+- Load failure
+- Invalid API response
+
+Errors should be visible without crashing the planner or replacing the current city.
+
+#### Performance
+
+Visual polish MUST NOT compromise:
+
+- Sparse state
+- Chunking
+- Viewport culling
+- Minimal React re-renders
+- Canvas batching
+- 60 FPS normal viewport interaction target
+- Lazy model loading
+
+Prefer CSS transforms, targeted DOM animation, and localized anime.js animations for UI effects.
+
+Do not introduce a heavyweight 2D rendering abstraction.
+
+#### Accessibility
+
+All Phase 4 UI MUST:
+
+- Maintain keyboard-focus visibility.
+- Provide text alternatives/tooltips for icon-only actions.
+- Preserve readable contrast.
+- Provide non-color cues for score state.
+- Support desktop and mobile viewport sizes.
+- Respect reduced-motion preferences.
+
+#### Phase 4 Exit Criteria
+
+- A selected geographic area can be imported and edited using the same planner tools.
 - GIS failure never destroys the current city.
+- The interface is substantially more polished, stylish, and minimal while remaining canvas-first.
+- Web Design and Frontend skills are visibly reflected in layout, UX, responsiveness, accessibility, and component quality.
+- shadcn/ui is integrated appropriately.
+- Runway and Watermelon UI are used selectively where beneficial.
+- anime.js provides restrained, useful micro-interactions.
+- The architecture is ready for future freeform road geometry.
+- The architecture is ready for future independently oriented building models.
+- Existing Phase 1–3 behavior remains functional.
+- Core tests pass.
+- The Phase 4 demo flow can be completed reliably.
+
 
 ### Phase 5 — Optional 3D Visualization
 
@@ -169,6 +502,8 @@ Deliver:
 - Tile-level model references.
 - React Three Fiber 3D view.
 - Graceful fallback to 2D if a model fails.
+- Future-ready per-model transform metadata for rotation, scale, and position offsets.
+- Future-ready spatial placement that allows models to be independently oriented from the underlying tile.
 
 3D MUST be optional and MUST NOT block the core planner or scoring workflow.
 
@@ -270,6 +605,9 @@ graph TD
 - Native HTML5 Canvas for 2D grid rendering
 - React Three Fiber / Three.js for advanced 3D mode
 - `@supabase/supabase-js` for client-side Supabase operations when appropriate
+- `shadcn/ui` for accessible, composable UI primitives where appropriate
+- `anime.js` for restrained interaction animation where appropriate
+- Runway and Watermelon UI may be used selectively where they materially improve the interface
 
 ### Frontend directives
 
@@ -1484,6 +1822,22 @@ AI agents implementing MetroGrid must follow these rules.
 
 ## MUST
 
+### Phase 4+ Frontend / Design Directives
+
+- MUST read and apply the available **Web Design skill** and **Frontend skill** before implementing Phase 4.
+- MUST use shadcn/ui for appropriate reusable UI primitives rather than building redundant equivalents.
+- SHOULD use Runway and Watermelon UI selectively where they materially improve visual quality or interaction.
+- SHOULD use anime.js for purposeful micro-interactions and placement feedback.
+- MUST keep the city canvas visually dominant.
+- MUST keep the main planner usable during GIS workflows.
+- MUST preserve the sparse city state as authoritative.
+- MUST keep future road geometry and model transform metadata extensible without prematurely replacing the current grid/scoring architecture.
+- MUST treat road orientation/geometry as spatial representation, not arbitrary score logic.
+- MUST keep building rotation/scale/offset as visual transform data, separate from scoring.
+- MUST respect `prefers-reduced-motion`.
+- MUST avoid unnecessary dependencies, duplicate component systems, and speculative architecture.
+- MUST run the app, automated tests, and the primary manual flow before declaring Phase 4 complete.
+
 - Follow the API contracts exactly.
 - Use TypeScript on the frontend.
 - Use FastAPI + Pydantic on the backend.
@@ -1556,6 +1910,21 @@ MetroGrid MUST be considered complete relative to the phase being implemented, n
 - [ ] Core scoring tests pass.
 - [ ] The UI is minimal and understandable without instructions.
 
+### Phase 4 UI / Spatial Milestone
+
+- [ ] Web Design skill applied.
+- [ ] Frontend skill applied.
+- [ ] shadcn/ui integrated coherently.
+- [ ] Runway used selectively where beneficial.
+- [ ] anime.js used for purposeful micro-interactions.
+- [ ] Watermelon UI used selectively where beneficial.
+- [ ] GIS import is polished, responsive, and recoverable.
+- [ ] Existing city state survives GIS failure.
+- [ ] Main canvas remains dominant.
+- [ ] Future freeform road geometry has a clean architectural extension point.
+- [ ] Future independently oriented building models have a clean transform extension point.
+- [ ] No unnecessary dependency or competing UI framework has been introduced.
+
 ### Advanced milestone
 The original full checklist below applies only after the prototype milestone is stable. Each item should be delivered as a separate, testable extension.
 
@@ -1580,6 +1949,26 @@ These are explicitly out of the initial 48-hour scope unless time permits:
 These features must not be implemented at the expense of the core requirements.
 
 ---
+
+# 31.1 Spatial Extensibility Principle
+
+MetroGrid MUST preserve a clean distinction between logical simulation state and spatial presentation.
+
+The long-term spatial model should support:
+
+```text
+Logical City State
+    ↓
+Spatial Geometry
+    ↓
+Visual Transform
+    ↓
+Renderer
+```
+
+This allows the system to evolve from grid-aligned tiles into richer spatial objects without changing the deterministic scoring model.
+
+Future roads may contain geometry independent of a single tile orientation, while future buildings may contain independent model transforms. These features must remain extensions of the existing planner, not separate representations of the city.
 
 # 31. Final Architecture Principle
 
