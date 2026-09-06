@@ -1,0 +1,67 @@
+@import "tailwindcss";
+
+/* ---- MetroGrid design tokens ------------------------------------------- */
+:root {
+  --mg-bg: #020617;
+  --mg-surface: #0f172a;
+  --mg-border: #1e293b;
+  --mg-text: #e2e8f0;
+  --mg-muted: #94a3b8;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--mg-bg);
+  color: var(--mg-text);
+  font-family:
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard-focus visibility (PRD §14A accessibility). */
+:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+
+/* Floating placement feedback: float upward + fade out (PRD §11). */
+@keyframes feedback-pop {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(6px) scale(0.92);
+  }
+  12% {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+  70% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-26px) scale(1);
+  }
+}
+
+.feedback-pop {
+  animation: feedback-pop 1.5s ease-out forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .feedback-pop {
+    animation-duration: 0.01s;
+    animation-fill-mode: forwards;
+    opacity: 0;
+  }
+}
