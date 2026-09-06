@@ -1,10 +1,10 @@
 # MetroGrid — Advanced Edition
 ## Product Requirements Document (PRD)
 
-**Version:** 1.0  
-**Purpose:** Hackathon-ready, deterministic specification for AI coding agents and human developers  
-**Target build window:** 48 hours  
-**Primary goal:** Build an expandable, grid-based urban simulation and city-planning platform with real-time scoring, GIS ingestion, multi-tier roads, and optional custom 3D buildings.
+**Version:** 2.0 — Progressive Prototype-First Edition  
+**Purpose:** Progressive, prototype-first specification for AI coding agents and human developers; build a working vertical slice first, validate it, then extend it incrementally  
+**Target build window:** 48 hours for the first demoable prototype, followed by progressive extensions  
+**Primary goal:** Build a polished, minimal, demoable urban simulation prototype first, then progressively extend the same foundation with sparse-grid scaling, richer scoring, GIS ingestion, persistence, and optional 3D assets.
 
 ---
 
@@ -29,6 +29,149 @@ Provide a fast, visually understandable planning tool that lets users answer:
 ### 1.2 Hackathon Goal
 
 The implementation must remain deterministic, understandable, and demoable. AI coding agents must not introduce unnecessary dependencies, speculative services, heavyweight ORMs, or undocumented API routes.
+
+
+## 1.3 Progressive Product Strategy — Prototype First, Then Expand
+
+MetroGrid MUST be developed as a sequence of working increments rather than as a single large implementation.
+
+### Guiding principle
+
+> Build the smallest useful version, prove the core interaction, preserve the architecture, and only then add complexity.
+
+Every phase MUST leave the application in a runnable, demoable state. Later phases extend the previous phase; they do not replace it with a parallel implementation.
+
+### Phase 0 — Foundation and UX Skeleton
+
+Goal: establish the application shell and design language before implementing the full simulation.
+
+Deliver:
+- React + TypeScript + Vite application shell.
+- Minimal responsive layout.
+- City canvas area.
+- Compact tile/tool palette.
+- Score panel with placeholder values.
+- Clear empty state and basic interaction affordances.
+- Shared types and project conventions.
+- Health-checkable frontend/backend setup.
+
+Exit criteria:
+- App starts reliably.
+- User can see the planner shell.
+- UI feels coherent before advanced functionality is added.
+
+### Phase 1 — Functional Core Prototype / Vertical Slice
+
+Goal: prove the complete basic loop end-to-end with the fewest features.
+
+Deliver:
+1. 20×20 compatibility grid or small bounded grid view.
+2. Residential, Commercial, Green, Industrial, and Road placement.
+3. Erase tool.
+4. Deterministic `/api/calculate`.
+5. Livability, Traffic, and Resources scores.
+6. Local score feedback after placement.
+7. Basic responsive score dashboard.
+
+The prototype MUST intentionally defer GIS, Supabase persistence, 3D, infinite coordinates, and advanced road hierarchy.
+
+Exit criteria:
+- A user can open the app, place zones, immediately see score changes, remove a tile, and understand why the score changed.
+- Backend tests cover the initial scoring rules.
+- No core interaction depends on unfinished advanced features.
+
+### Phase 2 — Sparse Grid and Viewport Scaling
+
+Goal: migrate the working prototype to the Advanced Edition's expandable sparse coordinate model.
+
+Deliver:
+- `Map<string, TileObject>` authoritative state.
+- Signed integer coordinates.
+- World/grid coordinate conversion.
+- Pan and zoom.
+- Viewport bounds.
+- Chunking and viewport culling.
+- Backward-compatible conversion from the Phase 1 representation.
+
+Exit criteria:
+- Existing Phase 1 behavior still works.
+- Users can pan and zoom beyond a fixed 20×20 board.
+- Off-screen theoretical coordinates are never materialized as a full matrix.
+
+### Phase 3 — Road Intelligence and Persistence
+
+Goal: make city planning strategically meaningful and persistable.
+
+Deliver:
+- Road subtypes 40–43.
+- Weighted A* traffic connectivity.
+- Congestion estimation.
+- Save/load through Supabase.
+- Validation, error states, and recovery UX.
+
+Exit criteria:
+- Road hierarchy materially affects pathfinding.
+- Save/load restores the same sparse state.
+- Scoring remains deterministic.
+
+### Phase 4 — GIS Import
+
+Goal: let users start from real geographic context.
+
+Deliver:
+- Map selection UI.
+- Bounding-box selection.
+- GIS ingestion.
+- Coordinate transformation.
+- Deterministic rasterization.
+- Metadata-to-tile mapping.
+- Merge imported data into the existing sparse grid.
+
+GIS MUST remain an extension of the planner, not a separate editing product.
+
+Exit criteria:
+- A selected area can be imported and then edited using the same planner tools.
+- GIS failure never destroys the current city.
+
+### Phase 5 — Optional 3D Visualization
+
+Goal: increase demo impact without changing the simulation model.
+
+Deliver:
+- `.glb` / `.gltf` upload.
+- Supabase Storage integration.
+- Tile-level model references.
+- React Three Fiber 3D view.
+- Graceful fallback to 2D if a model fails.
+
+3D MUST be optional and MUST NOT block the core planner or scoring workflow.
+
+### Phase 6 — Polish, Hardening, and Demo Readiness
+
+Goal: turn the working system into a reliable hackathon demonstration.
+
+Deliver:
+- UX polish.
+- Loading, empty, success, and error states.
+- Keyboard shortcuts where useful.
+- Accessibility checks.
+- Performance profiling.
+- Test coverage for core flows.
+- Demo seed city.
+- Clear demo narrative.
+
+### Progressive implementation rule
+
+At the end of every phase:
+1. Run the application.
+2. Run automated tests.
+3. Manually exercise the primary user flow.
+4. Fix regressions before starting the next phase.
+5. Keep the previous phase usable.
+6. Update documentation and decisions made.
+7. Commit a stable milestone before introducing the next major capability.
+
+Do not implement later-phase scaffolding solely for appearance. Build a capability when its previous phase is working and provides a stable integration point.
 
 ---
 
@@ -783,6 +926,109 @@ The UI should support at minimum:
 
 ---
 
+
+## 14A. Minimalistic UI / UX Requirements
+
+MetroGrid MUST use a minimalistic, user-first interface. The product should feel like a focused planning tool, not an admin dashboard.
+
+### Design principles
+
+- Prioritize the city canvas above all secondary information.
+- Keep the number of persistent controls small.
+- Make the current tool obvious.
+- Prefer icons + short labels over large panels of text.
+- Use progressive disclosure for advanced capabilities.
+- Avoid modal dialogs when an inline control can do the job.
+- Keep the primary interaction within one or two clicks.
+- Do not cover the active city area with oversized UI.
+- Provide clear hover, active, selected, disabled, loading, and error states.
+- Use consistent spacing, typography, border radius, and icon treatment through shared design tokens.
+
+### Primary layout
+
+Recommended desktop structure:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│ MetroGrid                         Scores: 82 74 91   Save   │
+├───────────────┬─────────────────────────────────────────────┤
+│ Tools         │                                             │
+│ ◯ Select      │                                             │
+│ □ Residential │                 CITY CANVAS                 │
+│ □ Commercial  │                                             │
+│ □ Park        │                                             │
+│ □ Industrial  │                                             │
+│ ═ Road        │                                             │
+│               │                                             │
+│ Advanced ▾    │                                             │
+└───────────────┴─────────────────────────────────────────────┘
+```
+
+Recommended mobile structure:
+
+```text
+┌───────────────────────┐
+│ MetroGrid       82 74 │
+│                       │
+│      CITY CANVAS      │
+│                       │
+│                       │
+├───────────────────────┤
+│ [Select][Road][Park]  │
+│ [Res][Comm][Ind]      │
+└───────────────────────┘
+```
+
+### Information hierarchy
+
+1. City canvas and current action.
+2. Global score summary.
+3. Tool selection.
+4. Contextual feedback.
+5. Advanced features such as GIS, save/load, and 3D.
+
+### Score UX
+
+Scores must be compact, readable, and glanceable. Prefer a small card or inline meter for each metric.
+
+The score display should communicate:
+- current value;
+- positive/negative movement;
+- what changed most recently.
+
+Avoid requiring the user to open a panel just to understand a placement result.
+
+### Placement feedback UX
+
+The latest action should produce a lightweight in-context message such as:
+
+```text
++10 Livability
+```
+
+or
+
+```text
+-15 Livability
+```
+
+The feedback should animate briefly, then disappear. It must not block interaction.
+
+### Advanced feature UX
+
+GIS import, save/load, and 3D should be hidden behind compact controls or a clearly labeled Advanced area until they are needed.
+
+A new feature MUST NOT force a redesign of the main planner canvas.
+
+### Accessibility
+
+The UI MUST:
+- maintain keyboard-focus visibility;
+- provide text alternatives/tooltips for icon-only actions;
+- preserve readable contrast;
+- provide non-color cues for score state;
+- support common desktop and mobile viewport sizes.
+
 # 15. Dashboard
 
 The dashboard is top-aligned and displays:
@@ -1167,9 +1413,9 @@ For large cities, scoring algorithms should avoid repeated full-map scans where 
 
 # 27. Demo Workflow
 
-The 48-hour hackathon demo should follow a simple narrative.
+The 48-hour hackathon demo should follow a progressive narrative. The first demo must use the working prototype; advanced phases are added only after that core loop is stable.
 
-## Demo 1 — Build
+## Demo 1 — Prototype Build
 
 1. Place residential zones.
 2. Place commercial zones.
@@ -1177,27 +1423,27 @@ The 48-hour hackathon demo should follow a simple narrative.
 4. Add parks.
 5. Observe live score changes.
 
-## Demo 2 — Break the City
+## Demo 2 — Show Simulation Consequences
 
 1. Add heavy industry near residences.
 2. Disconnect roads.
 3. Show livability and traffic degradation.
 
-## Demo 3 — Optimize
+## Demo 3 — Extend the Prototype
 
 1. Add green spaces.
 2. Improve road hierarchy.
 3. Connect residences to commercial areas.
 4. Show score recovery.
 
-## Demo 4 — GIS Import
+## Demo 4 — Advanced GIS Extension
 
 1. Select an area on Google Maps.
 2. Import the area.
 3. Show automatically generated roads/buildings.
 4. Continue editing the imported city.
 
-## Demo 5 — 3D
+## Demo 5 — Optional 3D Extension
 
 1. Upload a `.glb` building.
 2. Place it on a tile.
@@ -1270,6 +1516,23 @@ MetroGrid Advanced Edition is considered complete when:
 
 ---
 
+
+## 29.1 Progressive Definition of Done
+
+MetroGrid MUST be considered complete relative to the phase being implemented, not only when every Advanced Edition feature exists.
+
+### Prototype milestone
+- [ ] Application shell is runnable.
+- [ ] User can place and delete core tile types.
+- [ ] `/api/calculate` returns deterministic scores.
+- [ ] Score dashboard updates after placement.
+- [ ] Local feedback is visible.
+- [ ] Core scoring tests pass.
+- [ ] The UI is minimal and understandable without instructions.
+
+### Advanced milestone
+The original full checklist below applies only after the prototype milestone is stable. Each item should be delivered as a separate, testable extension.
+
 # 30. Future Extensions
 
 These are explicitly out of the initial 48-hour scope unless time permits:
@@ -1332,3 +1595,49 @@ VISUALIZATION
 ```
 
 That separation is the core design constraint of MetroGrid.
+
+
+---
+
+
+## 32. Implementation Priority Order
+
+When tradeoffs are required, Cline MUST prioritize in this order:
+
+1. Working core interaction.
+2. Correct and deterministic simulation.
+3. Simple, readable architecture.
+4. Minimalistic, accessible UX.
+5. Automated tests and regression safety.
+6. Performance where it affects the current phase.
+7. Persistence.
+8. GIS.
+9. 3D.
+10. Nice-to-have polish.
+
+A feature with a lower priority MUST NOT destabilize a higher-priority capability.
+
+## 33. Explicit Non-Goals for the First Prototype
+
+The first prototype MUST NOT require:
+- Google Maps integration.
+- GIS ingestion.
+- Supabase persistence.
+- 3D model uploads.
+- Infinite-world UX.
+- Multiplayer.
+- Authentication.
+- AI/LLM recommendations.
+- Complex animations beyond essential interaction feedback.
+- A large UI component framework solely for styling.
+
+The prototype should feel complete enough to demonstrate the product idea, while remaining small enough for Cline to understand, test, and extend safely.
+
+## 34. Product Experience Target
+
+The intended experience is:
+
+> "Click, place, see the consequence, and keep designing."
+
+Every added feature should reinforce this loop rather than compete with it.
+
