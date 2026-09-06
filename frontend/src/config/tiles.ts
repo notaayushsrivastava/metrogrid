@@ -26,6 +26,8 @@ export interface TileMeta {
   ink: string;
   /** Short non-color cue rendered as text. */
   glyph: string;
+  /** Human-readable leader label for the legend / a11y. */
+  leader: string;
 }
 
 export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
@@ -35,6 +37,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#2e7d4f",
     ink: "#06130b",
     glyph: "R",
+    leader: "Housing",
   },
   [TILE.COMMERCIAL]: {
     label: "Commercial",
@@ -42,6 +45,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#1d4e8f",
     ink: "#061523",
     glyph: "C",
+    leader: "Business",
   },
   [TILE.GREEN]: {
     label: "Park",
@@ -49,6 +53,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#0f5132",
     ink: "#052e16",
     glyph: "P",
+    leader: "Green Space",
   },
   [TILE.INDUSTRIAL]: {
     label: "Industrial",
@@ -56,6 +61,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#8a6d1f",
     ink: "#231a04",
     glyph: "I",
+    leader: "Factory",
   },
   [TILE.ROAD]: {
     label: "Road",
@@ -63,6 +69,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#3a4150",
     ink: "#0b0e13",
     glyph: "=",
+    leader: "Road",
   },
   [TILE.ROAD_PEDESTRIAN]: {
     label: "Pedestrian Path",
@@ -70,6 +77,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#2a3140",
     ink: "#0b0e13",
     glyph: "·",
+    leader: "Walkway",
   },
   [TILE.ROAD_LOCAL]: {
     label: "Local Road",
@@ -77,6 +85,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#3a4150",
     ink: "#0b0e13",
     glyph: "=",
+    leader: "Local Road",
   },
   [TILE.ROAD_AVENUE]: {
     label: "Transit Avenue",
@@ -84,6 +93,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#1d4e8f",
     ink: "#061523",
     glyph: "≡",
+    leader: "Avenue",
   },
   [TILE.ROAD_HIGHWAY]: {
     label: "Express Highway",
@@ -91,6 +101,7 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
     edge: "#8a6d1f",
     ink: "#231a04",
     glyph: "≣",
+    leader: "Highway",
   },
 };
 
@@ -102,20 +113,22 @@ export interface ToolMeta {
   key: string;
   glyph: string;
   color: string;
+  /** Lucide icon name for the tool button. */
+  icon: string;
   /** Sidebar section (wireframe: BUILD / ZONES / ROADS). */
   group: "build" | "zones" | "roads";
 }
 
 export const TOOLS: ToolMeta[] = [
-  { id: "select", label: "Select", places: null, key: "V", glyph: "↖", color: "#8d96a5", group: "build" },
-  { id: "erase", label: "Erase", places: TILE.EMPTY, key: "X", glyph: "⌫", color: "#ff6b6b", group: "build" },
-  { id: "residential", label: "Res", places: TILE.RESIDENTIAL, key: "1", glyph: "R", color: "#7cffb2", group: "zones" },
-  { id: "commercial", label: "Com", places: TILE.COMMERCIAL, key: "2", glyph: "C", color: "#62a8ff", group: "zones" },
-  { id: "green", label: "Park", places: TILE.GREEN, key: "3", glyph: "P", color: "#34d399", group: "zones" },
-  { id: "industrial", label: "Ind", places: TILE.INDUSTRIAL, key: "4", glyph: "I", color: "#ffd166", group: "zones" },
-  { id: "road_local", label: "Local", places: TILE.ROAD_LOCAL, key: "5", glyph: "=", color: "#8d96a5", group: "roads" },
-  { id: "road_transit", label: "Transit", places: TILE.ROAD_AVENUE, key: "6", glyph: "≡", color: "#62a8ff", group: "roads" },
-  { id: "road_highway", label: "Highway", places: TILE.ROAD_HIGHWAY, key: "7", glyph: "≣", color: "#ffd166", group: "roads" },
+  { id: "select", label: "Select", places: null, key: "V", glyph: "⇢", color: "#8d96a5", icon: "mouse-pointer", group: "build" },
+  { id: "erase", label: "Erase", places: TILE.EMPTY, key: "X", glyph: "⌫", color: "#ff6b6b", icon: "eraser", group: "build" },
+  { id: "residential", label: "Res", places: TILE.RESIDENTIAL, key: "1", glyph: "R", color: "#7cffb2", icon: "house", group: "zones" },
+  { id: "commercial", label: "Com", places: TILE.COMMERCIAL, key: "2", glyph: "C", color: "#62a8ff", icon: "building-2", group: "zones" },
+  { id: "green", label: "Park", places: TILE.GREEN, key: "3", glyph: "P", color: "#34d399", icon: "trees", group: "zones" },
+  { id: "industrial", label: "Ind", places: TILE.INDUSTRIAL, key: "4", glyph: "I", color: "#ffd166", icon: "factory", group: "zones" },
+  { id: "road_local", label: "Local", places: TILE.ROAD_LOCAL, key: "5", glyph: "=", color: "#8d96a5", icon: "minus", group: "roads" },
+  { id: "road_transit", label: "Transit", places: TILE.ROAD_AVENUE, key: "6", glyph: "≡", color: "#62a8ff", icon: "train", group: "roads" },
+  { id: "road_highway", label: "Highway", places: TILE.ROAD_HIGHWAY, key: "7", glyph: "≣", color: "#ffd166", icon: "rocket", group: "roads" },
 ];
 
 export const TOOL_GROUPS: { id: ToolMeta["group"]; label: string; marker: string }[] = [

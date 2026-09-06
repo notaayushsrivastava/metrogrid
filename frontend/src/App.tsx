@@ -7,13 +7,14 @@
  */
 
 import { useEffect, lazy, useRef, Suspense, useState } from "react";
-import { MapPlus } from "lucide-react";
+import { MapPlus, Sun, Moon, Grid3x3 } from "lucide-react";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
 import { SaveLoadPanel } from "./components/SaveLoadPanel/SaveLoadPanel";
 import { StatusBar } from "./components/StatusBar/StatusBar";
 import { TilePalette } from "./components/TilePalette/TilePalette";
+import { ConfirmDialog } from "./components/ConfirmDialog/ConfirmDialog";
 import { Button } from "./components/ui/button";
 import {
   Tooltip,
@@ -23,6 +24,7 @@ import {
 } from "./components/ui/tooltip";
 import { slideDown } from "./lib/motion";
 import { toolById } from "./config/tiles";
+import { useTheme } from "./hooks/useTheme";
 import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
 
@@ -63,6 +65,8 @@ export default function App() {
   const { state, setTool, placeAt } = planner;
   const tool = toolById(state.tool);
   const [gisOpen, setGisOpen] = useState(false);
+  const [clearOpen, setClearOpen] = useState(false);
+  const { theme, toggleTheme } = useTheme();
   const bannerRef = useRef<HTMLDivElement>(null);
 
   // Keyboard shortcuts (ignored while typing in inputs).
@@ -97,9 +101,9 @@ export default function App() {
           <div className="flex min-w-0 items-center gap-2.5">
             <span
               aria-hidden="true"
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-sm text-primary"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-primary/40 bg-primary/10 text-primary"
             >
-              ◈
+              <Grid3x3 className="size-[18px]" />
             </span>
             <div className="min-w-0 leading-tight">
               <h1
@@ -160,8 +164,17 @@ export default function App() {
             </Tooltip>
             <Button
               variant="ghost"
+              size="icon"
+              onClick={toggleTheme}
+              aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={theme === "dark" ? "Light mode" : "Dark mode"}
+            >
+              {theme === "dark" ? <Sun className="size-4" aria-hidden="true" /> : <Moon className="size-4" aria-hidden="true" />}
+            </Button>
+            <Button
+              variant="ghost"
               size="sm"
-              onClick={planner.clearCity}
+              onClick={() => setClearOpen(true)}
               aria-label="Clear the city"
             >
               Clear
@@ -245,6 +258,15 @@ export default function App() {
         <Suspense fallback={null}>
           <GisImportPanel open={gisOpen} onOpenChange={setGisOpen} planner={planner} />
         </Suspense>
+
+        <ConfirmDialog
+          open={clearOpen}
+          onOpenChange={setClearOpen}
+          onConfirm={planner.clearCity}
+          title="Clear the city?"
+          description="This removes every tile from the canvas. This cannot be undone — save your layout first if you want to keep it."
+          confirmLabel="Clear city"
+        />
       </div>
     </TooltipProvider>
   );

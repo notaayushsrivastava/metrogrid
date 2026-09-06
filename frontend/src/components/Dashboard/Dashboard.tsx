@@ -84,17 +84,28 @@ export function Dashboard({ scores, movement, calculating, congestion, variant =
               ref={(el) => {
                 chipRefs.current[metric as ScoreMetric] = el;
               }}
-              className="flex items-center gap-1 rounded-md border border-border/70 bg-card/70 px-2 py-1 backdrop-blur"
-              title={METRIC_LABELS[metric as ScoreMetric]}
+              className="flex items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1.5 backdrop-blur"
+              title={`${METRIC_LABELS[metric as ScoreMetric]} — ${value === null ? "unknown" : scoreStyle(value).word}`}
             >
               <span
                 aria-hidden="true"
+                className="font-mono text-[9px] font-bold uppercase tracking-widest"
+                style={{ color: style?.color ?? "var(--muted-foreground)" }}
+              >
+                {metric === "livability" ? "LIV" : metric === "traffic" ? "TRF" : "RES"}
+              </span>
+              <span aria-hidden="true" className="text-faint">·</span>
+              <span
+                aria-hidden="true"
                 className="text-[10px]"
-                style={{ color: style?.color ?? "#5c6573" }}
+                style={{ color: style?.color ?? "var(--muted-foreground)" }}
               >
                 {style?.cue ?? "○"}
               </span>
-              <span className="text-xs font-bold tabular-nums" style={{ color: style?.color ?? "#cbd5e1" }}>
+              <span
+                className="text-xs font-bold tabular-nums"
+                style={{ color: style?.color ?? "var(--foreground)" }}
+              >
                 {value ?? "–"}
               </span>
               <Movement value={movement?.[metric as ScoreMetric]} />

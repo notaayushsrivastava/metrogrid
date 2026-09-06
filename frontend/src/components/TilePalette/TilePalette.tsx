@@ -5,6 +5,7 @@
  */
 
 import { TOOLS, TOOL_GROUPS, type ToolMeta } from "../../config/tiles";
+import { TOOL_ICONS } from "../../config/icons";
 import type { ToolId } from "../../types/city";
 
 interface TilePaletteProps {
@@ -44,14 +45,17 @@ function ToolRow({
     >
       <span
         aria-hidden="true"
-        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-xs font-bold transition-transform group-active:scale-90"
+        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md border text-[13px] transition-transform group-active:scale-90"
         style={{
           backgroundColor: `${tool.color}1f`,
           borderColor: `${tool.color}55`,
           color: tool.color,
         }}
       >
-        {tool.glyph}
+        {(() => {
+          const Icon = TOOL_ICONS[tool.icon];
+          return Icon ? <Icon className="size-[14px]" /> : <span className="text-xs font-bold">{tool.glyph}</span>;
+        })()}
       </span>
       <span className="min-w-0 flex-1 truncate font-medium">{tool.label}</span>
       <kbd
