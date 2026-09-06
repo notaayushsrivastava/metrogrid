@@ -74,8 +74,16 @@ npm run dev        # http://localhost:5173
 ```
 
 Set `VITE_API_BASE` in the frontend env to point somewhere other than
-`http://localhost:8000`. Backend CORS origins default to the Vite dev ports;
+`http://localhost:8000`. Backend CORS origins default to the Vite dev ports
+(plus any `localhost`/`127.0.0.1` port via regex, so dev port drift is safe);
 override with `METROGRID_CORS_ORIGINS` (comma-separated).
+
+GIS import env vars: `METROGRID_OVERPASS_URL` (primary Overpass endpoint),
+`METROGRID_GIS_TIMEOUT_S` (per-endpoint budget, default 60), and
+`METROGRID_GIS_PROVIDER` (`osm` default, `sample` for offline demos). The
+importer tries the primary endpoint, then public mirrors
+(kumi.systems, maps.mail.ru) on timeout/429/5xx; the route runs the upstream
+fetch on a worker thread so the event loop stays responsive.
 
 ### Tests
 

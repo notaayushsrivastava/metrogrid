@@ -1,5 +1,6 @@
 """GIS import API tests (PRD §7, §12.2, §20.2, §25.1.11)."""
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -174,8 +175,6 @@ class TestGisImportValidation:
 
 class TestOverpassParsing:
     def test_elements_convert_to_features_deterministically(self):
-        import httpx
-
         elements = [
             {
                 "type": "way",
@@ -210,7 +209,7 @@ class TestOverpassParsing:
         class FakeResponse:
             status_code = 429
 
-        provider = gis_service.OverpassProvider(url="http://unit.test", timeout=1)
+        provider = gis_service.OverpassProvider(urls=["http://unit.test"], timeout=1)
         original_post = httpx.post
         try:
             httpx.post = lambda *a, **k: FakeResponse()
@@ -225,4 +224,88 @@ class TestOverpassParsing:
             {"type": "way", "id": 2, "tags": {"waterway": "river"}, "geometry": []},
         ]
         assert gis_service.overpass_elements_to_features(elements) == []
+
+
+class TestOverpassMirrorFallback:
+    """Falls back to mirrors when the primary times out or is rate-limited."""
+
+    def _bounds(self) -> GeoBounds:
+        return GeoBounds(north=12.98, south=12.97, east=80.25, west=80.24)
+
+    def _ok_response(self) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "elements": [
+                    {
+                        "type": "way",
+                        "id": 1,
+                        "tags": {"highway": "residential"},
+                        "geometry": [
+                            {"lon": 80.240, "lat": 12.975},
+                            {"lon": 80.245, "lat": 12.975},
+                        ],
+                    }
+                ]
+            },
+            request=httpx.Request("POST", "http://mirror.test"),
+        )
+
+    def test_falls_back_to_mirror_on_primary_timeout(self, monkeypatch):
+        provider = gis_service.OverpassProvider(
+            urls=["http://primary.test", "http://mirror.test"], timeout=1
+        )
+        attempted: list[str] = []
+
+        def fake_post(url, **_kwargs):
+            attempted.append(url)
+            if url == "http://primary.test":
+                raise httpx.ReadTimeout("timed out", request=None)
+            return self._ok_response()
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        features = provider.fetch_features(self._bounds())
+        assert [f.tile_type for f in features] == [config.ROAD_LOCAL]
+        assert attempted == ["http://primary.test", "http://mirror.test"]
+
+    def test_falls_back_on_429_rate_limit(self, monkeypatch):
+        provider = gis_service.OverpassProvider(
+            urls=["http://primary.test", "http://mirror.test"], timeout=1
+        )
+        calls = {"n": 0}
+
+        def fake_post(url, **_kwargs):
+            calls["n"] += 1
+            if url == "http://primary.test":
+                return httpx.Response(429, request=httpx.Request("POST", url))
+            return self._ok_response()
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        features = provider.fetch_features(self._bounds())
+        assert features
+        assert calls["n"] == 2
+
+    def test_all_endpoints_timeout_reports_timeout_flag(self, monkeypatch):
+        provider = gis_service.OverpassProvider(
+            urls=["http://a.test", "http://b.test"], timeout=1
+        )
+
+        def fake_post(url, **_kwargs):
+            raise httpx.ReadTimeout("timed out", request=None)
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        with pytest.raises(gis_service.GisSourceUnavailable) as exc_info:
+            provider.fetch_features(self._bounds())
+        assert exc_info.value.timeout is True
+
+    def test_primary_env_override_keeps_mirrors(self, monkeypatch):
+        monkeypatch.setenv(config.OVERPASS_URL_ENV, "http://custom.test")
+        provider = gis_service.OverpassProvider()
+        assert provider.urls[0] == "http://custom.test"
+        assert len(provider.urls) == 1 + len(config.OVERPASS_FALLBACK_URLS)
+
+    def test_timeout_env_override(self, monkeypatch):
+        monkeypatch.setenv(config.GIS_TIMEOUT_ENV, "90")
+        provider = gis_service.OverpassProvider()
+        assert provider.timeout == 90.0
 

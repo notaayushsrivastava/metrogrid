@@ -54,12 +54,19 @@ def _cors_origins() -> list[str]:
     return list(config.DEFAULT_CORS_ORIGINS)
 
 
+# Dev servers rarely keep the same port (Vite auto-increments when 5173 is
+# busy), so any localhost/127.0.0.1 origin is accepted in addition to the
+# explicit allow-list. Production origins come from METROGRID_CORS_ORIGINS.
+_CORS_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_cors_origins(),
+    allow_origin_regex=_CORS_ORIGIN_REGEX,
     allow_credentials=False,
-    allow_methods=["GET", "POST"],
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 

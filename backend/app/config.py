@@ -129,9 +129,21 @@ METRIC_PRIORITY = ("livability", "resources", "traffic")
 GIS_PROVIDER_ENV = "METROGRID_GIS_PROVIDER"
 GIS_DEFAULT_PROVIDER = "osm"
 
+# Primary Overpass endpoint (env-overridable for mirrors/self-hosting).
 OVERPASS_URL_ENV = "METROGRID_OVERPASS_URL"
 OVERPASS_DEFAULT_URL = "https://overpass-api.de/api/interpreter"
-GIS_REQUEST_TIMEOUT_S = 25.0
+
+# Public Overpass mirrors tried in order when the primary times out or is
+# rate-limited (429/504 are common on the main instance for dense cities).
+OVERPASS_FALLBACK_URLS = (
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+)
+
+# Per-attempt budget. Dense city extracts routinely need 30-60 s server-side,
+# so the default is raised from 25 s. Overridable via env.
+GIS_TIMEOUT_ENV = "METROGRID_GIS_TIMEOUT_S"
+GIS_REQUEST_TIMEOUT_S = 60.0
 
 MAX_BBOX_SPAN_DEG = 0.1
 MAX_BBOX_AREA_DEG2 = 0.01

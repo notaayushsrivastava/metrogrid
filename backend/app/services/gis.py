@@ -65,15 +65,40 @@ out geom;
 
 
 class OverpassProvider:
-    """OpenStreetMap features via the Overpass API (PRD §7.1-7.2)."""
+    """OpenStreetMap features via the Overpass API (PRD §7.1-7.2).
+
+    Tries the primary endpoint first, then the public mirrors in order when
+    the primary times out or is rate-limited (429/502/503/504 are common on
+    the main instance for dense city extracts). Each attempt gets the full
+    timeout budget; the first successful response wins.
+    """
 
     name = "osm"
 
-    def __init__(self, url: str | None = None, timeout: float | None = None) -> None:
-        self.url = url or os.environ.get(
-            config.OVERPASS_URL_ENV, config.OVERPASS_DEFAULT_URL
-        )
+    def __init__(
+        self,
+        urls: list[str] | None = None,
+        timeout: float | None = None,
+    ) -> None:
+        if urls is None:
+            primary = os.environ.get(
+                config.OVERPASS_URL_ENV, config.OVERPASS_DEFAULT_URL
+            )
+            try:
+                configured_timeout = float(
+                    os.environ.get(config.GIS_TIMEOUT_ENV, config.GIS_REQUEST_TIMEOUT_S)
+                )
+            except ValueError:
+                configured_timeout = config.GIS_REQUEST_TIMEOUT_S
+            timeout = configured_timeout if timeout is None else timeout
+            urls = [primary, *config.OVERPASS_FALLBACK_URLS]
+        self.urls = urls
         self.timeout = timeout if timeout is not None else config.GIS_REQUEST_TIMEOUT_S
+
+    @property
+    def url(self) -> str:
+        """Primary endpoint (kept for backwards compatibility / logging)."""
+        return self.urls[0]
 
     def fetch_features(self, bounds: GeoBounds) -> list[GeoFeature]:
         query = _OVERPASS_QUERY_TEMPLATE.format(
@@ -83,44 +108,61 @@ class OverpassProvider:
             n=bounds.north,
             e=bounds.east,
         )
-        try:
-            response = httpx.post(
-                self.url,
-                data={"data": query},
-                headers={
-                    "User-Agent": "MetroGrid/0.1 (city planning prototype)",
-                    "Accept": "application/json",
-                },
-                timeout=self.timeout,
-            )
-        except httpx.TimeoutException as exc:
+
+        failures: list[str] = []
+        timed_out = False
+        for url in self.urls:
+            try:
+                # Split budgets: fail fast on unreachable hosts, but allow the
+                # full window for the (slow) extraction itself.
+                timeout = httpx.Timeout(self.timeout, connect=10.0)
+                response = httpx.post(
+                    url,
+                    data={"data": query},
+                    headers={
+                        "User-Agent": "MetroGrid/0.1 (city planning prototype)",
+                        "Accept": "application/json",
+                    },
+                    timeout=timeout,
+                )
+            except httpx.TimeoutException as exc:
+                timed_out = True
+                failures.append(f"{url}: timed out after {int(self.timeout)}s")
+                continue
+            except httpx.HTTPError as exc:
+                failures.append(f"{url}: {type(exc).__name__}")
+                continue
+
+            if response.status_code in (429, 502, 503, 504):
+                timed_out = timed_out or response.status_code == 504
+                failures.append(f"{url}: HTTP {response.status_code}")
+                continue
+            if response.status_code != 200:
+                # Non-retryable client/server error — no point trying mirrors
+                # with the same query? Rate-limit-shaped codes were handled
+                # above; treat others as fatal for this provider.
+                raise GisSourceUnavailable(
+                    f"The map data source rejected the request (HTTP {response.status_code})."
+                )
+
+            try:
+                elements = response.json().get("elements", [])
+            except ValueError:
+                failures.append(f"{url}: unreadable response")
+                continue
+
+            return overpass_elements_to_features(elements)
+
+        if timed_out:
             raise GisSourceUnavailable(
-                "The map data source timed out. Try again or pick a smaller area.",
+                "The map data source timed out on every endpoint. Try a "
+                "smaller area or retry in a minute.",
                 timeout=True,
-            ) from exc
-        except httpx.HTTPError as exc:
-            raise GisSourceUnavailable(
-                "The map data source is unreachable. Check the connection and retry."
-            ) from exc
-
-        if response.status_code in (429, 502, 503, 504):
-            raise GisSourceUnavailable(
-                "The map data source is busy. Retry in a few seconds.",
-                timeout=response.status_code == 504,
             )
-        if response.status_code != 200:
-            raise GisSourceUnavailable(
-                f"The map data source rejected the request (HTTP {response.status_code})."
-            )
-
-        try:
-            elements = response.json().get("elements", [])
-        except ValueError as exc:
-            raise GisSourceUnavailable(
-                "The map data source returned an unreadable response."
-            ) from exc
-
-        return overpass_elements_to_features(elements)
+        raise GisSourceUnavailable(
+            "The map data source is unreachable. Check the connection and retry. "
+            + (f"(attempts: {'; '.join(failures)})" if failures else "")
+        )
 
 
 def overpass_elements_to_features(elements: list[dict[str, Any]]) -> list[GeoFeature]:

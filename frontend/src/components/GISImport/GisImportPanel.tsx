@@ -217,7 +217,7 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
           {phase === "importing" ? (
             <>
               <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-              Importing…
+              Importing… (up to a minute)
             </>
           ) : (
             "Import area"

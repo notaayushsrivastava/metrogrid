@@ -22,8 +22,12 @@ const API_BASE: string =
   (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8000";
 
 const REQUEST_TIMEOUT_MS = 8000;
-/** GIS fetches go upstream to a map provider — allow a longer window. */
-const GIS_TIMEOUT_MS = 30_000;
+/**
+ * GIS fetches go upstream to Overpass (primary + two mirrors, each up to 60 s
+ * server-side). The client budget must cover the full backend chain — 3 min —
+ * or the UI aborts while the backend is still working through the mirrors.
+ */
+const GIS_TIMEOUT_MS = 180_000;
 
 export class ApiError extends Error {
   readonly status: number;

@@ -9,6 +9,8 @@ never corrupt or replace existing city state (PRD Phase 4 exit criteria).
 
 from __future__ import annotations
 
+import asyncio
+
 import httpx
 from fastapi import APIRouter
 
@@ -37,7 +39,11 @@ async def gis_import(payload: GisImportRequest) -> GisImportResponse:
     )
 
     try:
-        features = provider.fetch_features(bounds)
+        # The provider does blocking httpx I/O (up to ~60 s per endpoint with
+        # mirror fallbacks). Running it on a worker thread keeps the event
+        # loop responsive — health checks, CORS preflights, and scoring
+        # requests are never stalled behind an import.
+        features = await asyncio.to_thread(provider.fetch_features, bounds)
     except gis_service.GisSourceUnavailable as exc:
         raise ApiError(504 if exc.timeout else 502, str(exc)) from exc
     except httpx.HTTPError as exc:  # defensive: provider bugs must not 500
