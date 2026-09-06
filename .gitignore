@@ -1,7 +1,9 @@
-__pycache__/*
-.venv/*
+__pycache__/
+.venv/
 *.env
-node_modules/*
-.clinerules/*
+node_modules/
+.clinerules/
 *.log
-frontend/dist/*
+frontend/dist/
+/package.json
+/package-lock.json
