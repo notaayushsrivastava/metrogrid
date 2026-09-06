@@ -5,7 +5,14 @@ import {
   cellSize,
   cellToScreenPx,
   screenToGrid,
+  clampZoom,
+  panBy,
+  zoomAt,
+  visibleGridBounds,
+  MIN_ZOOM,
+  MAX_ZOOM,
   type Camera,
+  type GridBounds,
 } from "./coordinates";
 
 const BASE_CAMERA: Camera = {
@@ -63,5 +70,59 @@ describe("screenToGrid", () => {
     // px = 40 → world x = (40-100)/20 = -3; py = 30 → world y = -3.5 → -4.
     const camera: Camera = { offsetX: 100, offsetY: 100, zoom: 1, tileSize: 20 };
     expect(screenToGrid(RECT, 50, 50, camera)).toEqual({ x: -3, y: -4 });
+  });
+});
+
+describe("clampZoom", () => {
+  it("clamps to MIN_ZOOM/MAX_ZOOM", () => {
+    expect(clampZoom(0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(5)).toBe(MAX_ZOOM);
+    expect(clampZoom(0.3)).toBe(0.3);
+  });
+});
+
+describe("panBy", () => {
+  it("shifts the camera offset by screen pixels", () => {
+    expect(panBy(BASE_CAMERA, 30, -10)).toEqual({ ...BASE_CAMERA, offsetX: 130, offsetY: 40 });
+  });
+});
+
+describe("zoomAt", () => {
+  it("keeps the world point under (px,py) anchored", () => {
+    // Focus on cell (3,2): its screen center at zoom 1 = (160, 90).
+    const zoomed = zoomAt(BASE_CAMERA, 160, 90, 2);
+    expect(zoomed.zoom).toBeCloseTo(2);
+    // The same world cell center must now sit at (160, 90).
+    const { px, py } = cellToScreenPx(zoomed, 3, 2);
+    expect(px).toBeCloseTo(160);
+    expect(py).toBeCloseTo(90);
+  });
+
+  it("clamps zoom and leaves camera unchanged at bounds", () => {
+    const atMax = zoomAt({ ...BASE_CAMERA, zoom: MAX_ZOOM }, 0, 0, 2);
+    expect(atMax).toEqual({ ...BASE_CAMERA, zoom: MAX_ZOOM });
+  });
+});
+
+describe("visibleGridBounds", () => {
+  it("computes the visible cell rectangle from the camera (PRD §6.1)", () => {
+    const bounds: GridBounds = visibleGridBounds(
+      { offsetX: 0, offsetY: 0, zoom: 1, tileSize: 20 },
+      600,
+      500,
+      1
+    );
+    // x from -1 (margin, floor((0-0)/20)-1) to 31 (ceil(600/20)+1)
+    expect(bounds.min_x).toBe(-1);
+    expect(bounds.max_x).toBe(31);
+    expect(bounds.min_y).toBe(-1);
+    expect(bounds.max_y).toBe(26);
+  });
+
+  it("accounts for camera offset", () => {
+    const bounds = visibleGridBounds(BASE_CAMERA, 600, 500, 0);
+    // Left edge: (0 - 100)/20 = -5; right edge (600-100)/20 = 25.
+    expect(bounds.min_x).toBe(-5);
+    expect(bounds.max_x).toBe(25);
   });
 });

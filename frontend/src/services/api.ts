@@ -34,6 +34,7 @@ export function serializeTiles(tiles: GridState): Record<string, { type: number 
 export async function calculateScores(
   tiles: GridState,
   latestAction: LatestAction | null,
+  activeBounds?: { min_x: number; max_x: number; min_y: number; max_y: number },
   signal?: AbortSignal
 ): Promise<CalculateResponse> {
   const controller = new AbortController();
@@ -49,6 +50,7 @@ export async function calculateScores(
       body: JSON.stringify({
         tiles: serializeTiles(tiles),
         latest_action: latestAction,
+        active_bounds: activeBounds,
       }),
       signal: controller.signal,
     });

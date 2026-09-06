@@ -7,6 +7,15 @@ import { TILE, type ToolId, type TileType } from "../types/city";
 
 export const GRID_SIZE = 20;
 
+/** Chunk size for Phase 2 viewport chunking (PRD §6.2). Centralized once. */
+export const CHUNK_SIZE = 16;
+
+/** Base tile size in CSS pixels at zoom 1 (Phase 2 camera). */
+export const BASE_TILE = 28;
+
+/** Cells visible horizontally/vertically in the default (initial) view. */
+export const DEFAULT_VIEW_SPAN = 20;
+
 export interface TileMeta {
   label: string;
   /** Base fill color for the canvas and the palette swatch. */

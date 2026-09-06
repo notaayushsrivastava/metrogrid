@@ -1,14 +1,14 @@
 /**
- * Screen ↔ grid coordinate conversion (PRD §14.1).
+ * Screen ↔ grid coordinate conversion and the Phase 2 camera (PRD §6.1, §14.1).
  *
  * `screenToGrid` is pure and takes the canvas bounding rect as an argument;
  * callers obtain the rect via `canvas.getBoundingClientRect()` — exactly as
- * the PRD mandates. The camera abstraction (offset/zoom/tile size) keeps the
- * conversion correct for the Phase 2 pan/zoom viewport without changes here.
+ * the PRD mandates. The camera (origin offset + zoom) supports panning and
+ * zooming across the full signed 32-bit coordinate space.
  */
 
 export interface Camera {
-  /** World-space pixel offset of the canvas origin. */
+  /** Screen-space position of grid origin (top-left of cell [0,0]). */
   offsetX: number;
   offsetY: number;
   /** Zoom multiplier (1 = base tile size). */
@@ -22,13 +22,23 @@ export interface GridPoint {
   y: number;
 }
 
-export function cellSize(camera: Camera): number {
-  return camera.tileSize * camera.zoom;
+/** Visible active bounds (PRD §6.1, §12.1). */
+export interface GridBounds {
+  min_x: number;
+  max_x: number;
+  min_y: number;
+  max_y: number;
 }
 
-/** Grid origin (top-left of cell [0,0]) in screen space. */
-export function gridOriginPx(camera: Camera): { px: number; py: number } {
-  return { px: camera.offsetX, py: camera.offsetY };
+export const MIN_ZOOM = 0.3;
+export const MAX_ZOOM = 3;
+
+export function clampZoom(zoom: number): number {
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+}
+
+export function cellSize(camera: Camera): number {
+  return camera.tileSize * camera.zoom;
 }
 
 /** Top-left screen position of a grid cell. */
@@ -44,7 +54,7 @@ export function cellToScreenPx(
 /**
  * Convert pointer coordinates (relative to the viewport) into integer grid
  * coordinates via snap-to-grid. Returns null when the pointer lies outside
- * the rect. Out-of-bounds grid values are the caller's concern.
+ * the rect. Works for any signed cell — including negative coordinates.
  */
 export function screenToGrid(
   rect: { left: number; top: number; width: number; height: number },
@@ -65,3 +75,44 @@ export function screenToGrid(
     y: Math.floor(worldY),
   };
 }
+
+/** Pan the camera by a screen-pixel delta. */
+export function panBy(camera: Camera, dxPx: number, dyPx: number): Camera {
+  return { ...camera, offsetX: camera.offsetX + dxPx, offsetY: camera.offsetY + dyPx };
+}
+
+/**
+ * Zoom by `factor`, keeping the world point under screen position
+ * (px, py) visually anchored at the cursor (standard zoom-at-cursor).
+ */
+export function zoomAt(camera: Camera, px: number, py: number, factor: number): Camera {
+  const zoom = clampZoom(camera.zoom * factor);
+  if (zoom === camera.zoom) return camera;
+  const scale = zoom / camera.zoom;
+  return {
+    ...camera,
+    zoom,
+    offsetX: px - (px - camera.offsetX) * scale,
+    offsetY: py - (py - camera.offsetY) * scale,
+  };
+}
+
+/**
+ * Active bounds of the visible viewport (PRD §6.1): the grid rectangle
+ * intersecting the canvas, expanded by `margin` cells on every side.
+ * Computed from the camera — never from a materialized matrix.
+ */
+export function visibleGridBounds(
+  camera: Camera,
+  width: number,
+  height: number,
+  margin = 1
+): GridBounds {
+  const size = cellSize(camera);
+  const min_x = Math.floor((0 - camera.offsetX) / size) - margin;
+  const max_x = Math.floor((width - camera.offsetX) / size) + margin;
+  const min_y = Math.floor((0 - camera.offsetY) / size) - margin;
+  const max_y = Math.floor((height - camera.offsetY) / size) + margin;
+  return { min_x, max_x, min_y, max_y };
+}
+

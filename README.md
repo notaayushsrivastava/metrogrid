@@ -131,8 +131,9 @@ field beyond the PRD contract) so removals explain why the score changed.
 - [x] **Phase 0** — app shell, palette, score panel, empty/error states
 - [x] **Phase 1** — 20×20 bounded grid, placement/erase, deterministic
       `/api/calculate`, dashboard, local feedback, tests
-- [ ] **Phase 2** — pan/zoom viewport, signed 32-bit coords, chunk culling
-      (sparse map already in place)
+- [x] **Phase 2** — unbounded sparse canvas: pan (drag/middle/Space/touch),
+      zoom (wheel/pinch/controls), chunked viewport culling, signed 32-bit
+      coords, live coordinate readout, active-bounds sent on every request
 - [ ] **Phase 3** — road subtypes UI, congestion, Supabase save/load
 - [ ] **Phase 4** — GIS import (`/api/gis/import`)
 - [ ] **Phase 5** — optional 3D (`.glb`/`.gltf`, React Three Fiber)

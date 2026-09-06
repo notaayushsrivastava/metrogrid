@@ -80,39 +80,65 @@ Exit criteria:
 - Backend tests cover the initial scoring rules.
 - No core interaction depends on unfinished advanced features.
 
-### Phase 2 — Sparse Grid and Viewport Scaling
-
-Goal: migrate the working prototype to the Advanced Edition's expandable sparse coordinate model.
-
-Deliver:
-- `Map<string, TileObject>` authoritative state.
-- Signed integer coordinates.
-- World/grid coordinate conversion.
-- Pan and zoom.
-- Viewport bounds.
-- Chunking and viewport culling.
-- Backward-compatible conversion from the Phase 1 representation.
-
-Exit criteria:
-- Existing Phase 1 behavior still works.
-- Users can pan and zoom beyond a fixed 20×20 board.
-- Off-screen theoretical coordinates are never materialized as a full matrix.
-
-### Phase 3 — Road Intelligence and Persistence
-
-Goal: make city planning strategically meaningful and persistable.
+**Phase 2 — Sparse Grid, Viewport Scaling, and Minimalist Styling Foundation**
+Goal: migrate the working prototype to the Advanced Edition's expandable sparse coordinate model while establishing the core minimalist UI styling using available MCPs.
 
 Deliver:
-- Road subtypes 40–43.
-- Weighted A* traffic connectivity.
-- Congestion estimation.
-- Save/load through Supabase.
-- Validation, error states, and recovery UX.
+
+* `Map<string, TileObject>` authoritative state, signed integer coordinates, and world/grid coordinate conversion.
+
+
+* Pan, zoom, viewport bounds, chunking, and viewport culling.
+
+
+* Backward-compatible conversion from the Phase 1 representation.
+
+
+* **Styling Integration:** Utilize MCPs to scaffold the foundational UI layout, ensuring the application of Cline's minimalistic skill.
+* **Minimalist UX:** Implement compact tool palettes and score displays, utilizing consistent design tokens (spacing, typography, border radius) without a heavyweight UI framework.
+
+
 
 Exit criteria:
-- Road hierarchy materially affects pathfinding.
-- Save/load restores the same sparse state.
-- Scoring remains deterministic.
+
+* Existing Phase 1 behavior still works, and off-screen theoretical coordinates are never materialized as a full matrix.
+
+
+* Users can pan and zoom beyond a fixed 20×20 board.
+
+
+* The UI strictly prioritizes the city canvas above all secondary information, maintaining a small number of persistent controls.
+
+
+
+**Phase 3 — Road Intelligence, Persistence, and Styled Advanced Controls**
+Goal: make city planning strategically meaningful and persistable while extending the minimalist design language to complex states.
+
+Deliver:
+
+* Road subtypes 40–43, weighted A* traffic connectivity, and congestion estimation.
+
+
+* Save/load through Supabase.
+
+
+* Validation, error states, and recovery UX.
+
+
+* **Styling Integration:** Extend the MCP-driven styling to new UI elements, ensuring error, loading, and disabled states are visually clear without relying on oversized modals.
+
+
+* **Progressive Disclosure:** Implement compact, inline controls for save/load and road hierarchy selection, hiding them behind an "Advanced" toggle if necessary to keep the primary canvas clear.
+
+
+
+Exit criteria:
+
+* Road hierarchy materially affects pathfinding, and scoring remains deterministic.
+
+* Save/load restores the same sparse state.
+
+* New persistence and road tools do not force a redesign of the main planner canvas or cover it with oversized UI.
 
 ### Phase 4 — GIS Import
 

@@ -21,6 +21,10 @@ export const TILE = {
 
 export type TileType = (typeof TILE)[keyof typeof TILE];
 
+/** Signed 32-bit coordinate limits (PRD §5.2). */
+export const GRID_MIN = -2147483648;
+export const GRID_MAX = 2147483647;
+
 export interface TileObject {
   type: TileType;
   model_url?: string;
@@ -35,6 +39,9 @@ export interface Bounds {
   min_y: number;
   max_y: number;
 }
+
+/** Active viewport bounds (PRD §6.1, §12.1) — sent with scoring requests. */
+export type GridBounds = Bounds;
 
 export interface LatestAction {
   x: number;

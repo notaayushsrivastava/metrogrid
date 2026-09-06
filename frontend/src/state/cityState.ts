@@ -5,12 +5,14 @@
  */
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
-import { GRID_SIZE } from "../config/tiles";
 import { calculateScores } from "../services/api";
 import {
+  GRID_MAX,
+  GRID_MIN,
   TILE,
   type Feedback,
   type GlobalScores,
+  type GridBounds,
   type GridState,
   type LatestAction,
   type LocalDelta,
@@ -65,9 +67,12 @@ export function tileKey(x: number, y: number): string {
   return `${x},${y}`;
 }
 
-/** Phase 1 bounded prototype grid (PRD §1.3 Phase 1). */
+/**
+ * Placement bounds: the full signed 32-bit coordinate space (PRD §5.2).
+ * Phase 2 removed the fixed 20×20 restriction — the sparse map grows freely.
+ */
 export function inBounds(x: number, y: number): boolean {
-  return x >= 0 && y >= 0 && x < GRID_SIZE && y < GRID_SIZE;
+  return x >= GRID_MIN && x <= GRID_MAX && y >= GRID_MIN && y <= GRID_MAX;
 }
 
 function applyMovement(
@@ -135,6 +140,8 @@ export interface CityPlanner {
   placeAt: (x: number, y: number) => void;
   clearCity: () => void;
   recalculate: () => void;
+  /** Canvas reports the visible active bounds (PRD §6.1) for API calls. */
+  reportBounds: (bounds: GridBounds) => void;
 }
 
 const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
@@ -152,15 +159,20 @@ const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
 export function useCityPlanner(): CityPlanner {
   const [state, dispatch] = useReducer(cityReducer, initialState);
   const requestSeq = useRef(0);
+  const boundsRef = useRef<GridBounds | null>(null);
   const stateRef = useRef(state);
   stateRef.current = state;
+
+  const reportBounds = useCallback((bounds: GridBounds) => {
+    boundsRef.current = bounds;
+  }, []);
 
   const runCalculation = useCallback(
     async (tiles: GridState, action: LatestAction | null) => {
       const seq = ++requestSeq.current;
       dispatch({ type: "CALC_START" });
       try {
-        const response = await calculateScores(tiles, action);
+        const response = await calculateScores(tiles, action, boundsRef.current ?? undefined);
         if (seq !== requestSeq.current) return; // stale response
         dispatch({
           type: "CALC_OK",
@@ -254,6 +266,6 @@ export function useCityPlanner(): CityPlanner {
     void runCalculation(new Map(), null);
   }, [runCalculation]);
 
-  return { state, setTool, placeAt, clearCity, recalculate };
+  return { state, setTool, placeAt, clearCity, recalculate, reportBounds };
 }
 

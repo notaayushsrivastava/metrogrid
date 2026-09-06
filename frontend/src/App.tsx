@@ -36,7 +36,8 @@ const STATUS_COLOR: Record<ConnectionStatus, string> = {
 };
 
 export default function App() {
-  const { state, setTool, placeAt, clearCity, recalculate } = useCityPlanner();
+  const { state, setTool, placeAt, clearCity, recalculate, reportBounds } =
+    useCityPlanner();
   const tool = toolById(state.tool);
 
   // Keyboard shortcuts (ignored while typing in inputs).
@@ -144,6 +145,7 @@ export default function App() {
             hoverColor={hoverColor}
             feedbacks={state.feedbacks}
             onPlace={placeAt}
+            onBoundsChange={reportBounds}
           />
           {/* Current action hint (information hierarchy #1, PRD §14A) */}
           <div className="pointer-events-none absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full border border-slate-700/60 bg-slate-900/85 px-3 py-1 text-[11px] text-slate-300">
