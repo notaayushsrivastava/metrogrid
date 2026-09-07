@@ -17,6 +17,8 @@ interface AreaMapPickerProps {
   onSelect: (bounds: GisBounds | null) => void;
   /** Increment to force the picker to redraw/fit the current selection. */
   nonce: number;
+  centerTarget?: { lat: number; lon: number; zoom?: number } | null;
+  userLocation?: { lat: number; lon: number } | null;
 }
 
 const RECT_STYLE: L.PolylineOptions = {
@@ -28,13 +30,20 @@ const RECT_STYLE: L.PolylineOptions = {
   fillOpacity: 0.08,
 };
 
-export function AreaMapPicker({ selection, onSelect, nonce }: AreaMapPickerProps) {
+export function AreaMapPicker({
+  selection,
+  onSelect,
+  nonce,
+  centerTarget,
+  userLocation,
+}: AreaMapPickerProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const rectRef = useRef<L.Rectangle | null>(null);
   const cornerARef = useRef<L.LatLng | null>(null);
   const markerARef = useRef<L.CircleMarker | null>(null);
   const markerBRef = useRef<L.CircleMarker | null>(null);
+  const userMarkerRef = useRef<L.CircleMarker | null>(null);
   const lastEmittedRef = useRef<GisBounds | null>(null);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
@@ -140,6 +149,33 @@ export function AreaMapPicker({ selection, onSelect, nonce }: AreaMapPickerProps
       map.fitBounds(bounds.pad(0.25));
     }
   }, [selection, nonce]);
+
+  // Center map on target location search
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !centerTarget) return;
+    map.flyTo([centerTarget.lat, centerTarget.lon], centerTarget.zoom ?? 15, {
+      duration: 1.0,
+    });
+  }, [centerTarget]);
+
+  // Render or update user's current GPS location pulse marker
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = null;
+
+    if (userLocation) {
+      userMarkerRef.current = L.circleMarker([userLocation.lat, userLocation.lon], {
+        radius: 7,
+        color: "#38bdf8",
+        fillColor: "#0284c7",
+        fillOpacity: 0.9,
+        weight: 2.5,
+      }).addTo(map);
+    }
+  }, [userLocation]);
 
   return (
     <div
