@@ -54,20 +54,36 @@ export async function calculateScores(
   activeBounds?: { min_x: number; max_x: number; min_y: number; max_y: number },
   signal?: AbortSignal,
   isFreeform?: boolean,
-  zones?: import("../types/spatial").SpatialZone[]
+  zones?: import("../types/spatial").SpatialZone[],
+  roads?: import("../types/spatial").SpatialRoad[]
 ): Promise<CalculateResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   // Allow caller cancellation to compose with the timeout.
   signal?.addEventListener("abort", () => controller.abort(), { once: true });
 
-  const zonesPayload = zones?.map((z) => ({
-    id: z.id,
-    type: z.type,
-    position: z.position,
-    rotation: z.rotation,
-    footprint: z.footprint,
-    area: z.footprint.width * z.footprint.depth,
+  const zonesPayload = zones?.map((z) => {
+    const rawW = z.footprint.width;
+    const rawD = z.footprint.depth;
+    // Scale cell-unit footprints to real meters (1 cell = 10m) if in cell units
+    const widthMeters = rawW < 5 ? rawW * 10 : rawW;
+    const depthMeters = rawD < 5 ? rawD * 10 : rawD;
+    const area = widthMeters * depthMeters;
+    return {
+      id: z.id,
+      type: z.type,
+      position: z.position,
+      rotation: z.rotation,
+      footprint: { width: widthMeters, depth: depthMeters },
+      area,
+    };
+  });
+
+  const roadsPayload = roads?.map((r) => ({
+    id: r.id,
+    type: r.type,
+    points: r.points,
+    width: r.width,
   }));
 
   let response: Response;
@@ -81,6 +97,7 @@ export async function calculateScores(
         active_bounds: activeBounds,
         is_freeform: Boolean(isFreeform),
         zones: zonesPayload,
+        roads: roadsPayload,
       }),
       signal: controller.signal,
     });

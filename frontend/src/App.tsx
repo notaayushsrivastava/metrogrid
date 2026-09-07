@@ -56,6 +56,8 @@ const GisImportPanel = lazy(() =>
     default: m.GisImportPanel,
   }))
 );
+import { RoadInspectorPanel } from "./components/RoadInspector/RoadInspectorPanel";
+import { ZoneInspectorPanel } from "./components/ZoneInspector/ZoneInspectorPanel";
 import { translateGridToFreeform, translateFreeformToZones } from "./utils/freeform";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
@@ -246,14 +248,15 @@ export default function App() {
                 <Button
                   variant="secondary"
                   size="sm"
-                  aria-label="Import map area"
+                  aria-label="Import Road Layout"
                   onClick={() => setGisOpen(true)}
                 >
                   <MapPlus aria-hidden="true" />
-                  <span className="hidden sm:inline">Import map</span>
+                  <span className="hidden sm:inline">Import Road Layout</span>
                 </Button>
               </TooltipTrigger>
-              <TooltipContent>Import a real area as editable tiles</TooltipContent>
+              <TooltipContent>Import real street polylines and road layout</TooltipContent>
+
             </Tooltip>
             {!isFreeformRoute && (
               <Tooltip>
@@ -386,9 +389,12 @@ export default function App() {
               >
                 <FreeformCanvas3D
                   meshes={freeformMeshes}
+                  roads={state.roads}
                   selectedMeshId={state.selectedZoneId}
+                  selectedRoadId={state.selectedRoadId}
                   activeTool={state.tool}
                   onSelectMesh={(id) => planner.selectZone(id)}
+                  onSelectRoad={(id) => planner.selectRoad(id)}
                   onAddMesh={(mesh) => {
                     const zones = translateFreeformToZones([mesh]);
                     if (zones.length > 0) planner.addZone(zones[0]);
@@ -398,6 +404,9 @@ export default function App() {
                     if (zones.length > 0) planner.resizeZone(zones[0]);
                   }}
                   onRemoveMesh={(id) => planner.removeZone(id)}
+                  onAddRoad={(road) => planner.addRoad(road)}
+                  onUpdateRoad={(road) => planner.updateRoad(road)}
+                  onRemoveRoad={(id) => planner.removeRoad(id)}
                   onGestureStart={planner.beginSpatialGesture}
                   onCommitGesture={planner.commitZones}
                 />
@@ -427,8 +436,10 @@ export default function App() {
                 onPlace={placeAt}
                 onBoundsChange={planner.reportBounds}
                 zones={state.zones}
+                roads={state.roads}
                 freeformMode={state.freeformMode}
                 selectedZoneId={state.selectedZoneId}
+                selectedRoadId={state.selectedRoadId}
                 onAddZone={(world) => {
                   const type = ZONE_TOOL_TYPE[state.tool] ?? 1;
                   planner.addZone({
@@ -447,7 +458,44 @@ export default function App() {
                 onGestureStart={planner.beginSpatialGesture}
                 onCommitZones={planner.commitZones}
                 onRemoveZone={planner.removeZone}
+                onAddRoad={(road) => planner.addRoad(road)}
+                onSelectRoad={(id) => planner.selectRoad(id)}
+                onUpdateRoad={(road) => planner.updateRoad(road)}
+                onRemoveRoad={(id) => planner.removeRoad(id)}
               />
+            )}
+
+            {/* Selected Zone Inspector Panel Overlay */}
+            {state.selectedZoneId && (
+              (() => {
+                const selectedZone = state.zones.find((z) => z.id === state.selectedZoneId);
+                return selectedZone ? (
+                  <ZoneInspectorPanel
+                    zone={selectedZone}
+                    open={Boolean(state.selectedZoneId)}
+                    onOpenChange={(open) => {
+                      if (!open) planner.selectZone(null);
+                    }}
+                    onUpdateZone={(zone) => planner.updateZone(zone)}
+                    onRemoveZone={(id) => planner.removeZone(id)}
+                  />
+                ) : null;
+              })()
+            )}
+
+            {/* Selected Road Inspector Panel Overlay */}
+            {state.selectedRoadId && (
+              (() => {
+                const selectedRoad = state.roads.find((r) => r.id === state.selectedRoadId);
+                return selectedRoad ? (
+                  <RoadInspectorPanel
+                    road={selectedRoad}
+                    onUpdate={(road) => planner.updateRoad(road)}
+                    onRemove={(id) => planner.removeRoad(id)}
+                    onClose={() => planner.selectRoad(null)}
+                  />
+                ) : null;
+              })()
             )}
           </main>
         </div>

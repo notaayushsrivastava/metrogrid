@@ -14,7 +14,7 @@ import {
 } from "../services/api";
 import { mergeImportedTiles } from "../utils/gis";
 import { deriveTileMap } from "../utils/spatial";
-import type { GridPointXY, SpatialZone } from "../types/spatial";
+import type { GridPointXY, SpatialZone, SpatialRoad } from "../types/spatial";
 import {
   GRID_MAX,
   GRID_MIN,
@@ -48,10 +48,14 @@ export interface CityState {
   /** Freeform spatial zones (PRD Phase 5 — Day 2). Their derived tile map
    *  is what feeds the (unchanged) scoring engine. */
   zones: SpatialZone[];
+  /** Freeform multi-segment roads (PRD Phase 6 — Day 2). */
+  roads: SpatialRoad[];
   /** When true the canvas places freeform zones instead of grid tiles. */
   freeformMode: boolean;
   /** Selected zone id (Select tool), enabling move/rotate/resize handles. */
   selectedZoneId: string | null;
+  /** Selected road id for freeform node editing. */
+  selectedRoadId: string | null;
   tool: ToolId;
   scores: GlobalScores | null;
   movement: MetricMovement | null;
@@ -89,7 +93,9 @@ type CityAction =
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
   | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[] }
-  | { type: "IMPORT_MERGED"; tiles: GridState }
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; roads?: SpatialRoad[] }
+  | { type: "IMPORT_MERGED"; tiles: GridState; zones?: SpatialZone[]; roads?: SpatialRoad[] }
+
   | { type: "SAVED"; name: string; at: number }
   | { type: "CITY_NAMED"; name: string }
   | { type: "SET_FREEFORM"; on: boolean }
@@ -100,6 +106,10 @@ type CityAction =
   | { type: "ZONE_UPDATE_LIVE"; zone: SpatialZone }
   | { type: "ZONE_UPDATE"; zone: SpatialZone }
   | { type: "SELECT_ZONE"; id: string | null }
+  | { type: "ROAD_ADD"; road: SpatialRoad }
+  | { type: "ROAD_REMOVE"; id: string }
+  | { type: "ROAD_UPDATE"; road: SpatialRoad }
+  | { type: "SELECT_ROAD"; id: string | null }
   | { type: "SPATIAL_SNAPSHOT"; zones: SpatialZone[] }
   | { type: "UNDO" }
   | { type: "REDO" };
@@ -107,8 +117,10 @@ type CityAction =
 export const initialState: CityState = {
   tiles: new Map(),
   zones: [],
+  roads: [],
   freeformMode: false,
   selectedZoneId: null,
+  selectedRoadId: null,
   tool: "residential",
   scores: null,
   movement: null,
@@ -222,7 +234,14 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
 
     case "IMPORT_MERGED":
       // Commit merged GIS tiles into the rendered state atomically.
-      return { ...state, tiles: action.tiles, feedbacks: [] };
+      return {
+        ...state,
+        tiles: action.tiles,
+        zones: action.zones ? [...state.zones, ...action.zones] : state.zones,
+        roads: action.roads ? [...state.roads, ...action.roads] : state.roads,
+        feedbacks: [],
+      };
+
 
     case "SAVED":
       return { ...state, lastSavedAt: action.at, cityName: action.name };
@@ -235,6 +254,24 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
 
     case "SELECT_ZONE":
       return { ...state, selectedZoneId: action.id };
+
+    case "SELECT_ROAD":
+      return { ...state, selectedRoadId: action.id };
+
+    case "ROAD_ADD": {
+      const roads = [...state.roads, action.road];
+      return { ...state, roads, selectedRoadId: action.road.id };
+    }
+
+    case "ROAD_REMOVE": {
+      const roads = state.roads.filter((r) => r.id !== action.id);
+      return { ...state, roads, selectedRoadId: null };
+    }
+
+    case "ROAD_UPDATE": {
+      const roads = state.roads.map((r) => (r.id === action.road.id ? action.road : r));
+      return { ...state, roads };
+    }
 
     case "ZONE_ADD": {
       const zones = [...state.zones, action.zone];
@@ -349,10 +386,16 @@ export interface CityPlanner {
   moveZone: (id: string, position: GridPointXY) => void;
   rotateZone: (id: string, rotation: number) => void;
   resizeZone: (zone: SpatialZone) => void;
+  updateZone: (zone: SpatialZone) => void;
   beginSpatialGesture: () => void;
   commitZones: () => void;
   undoZones: () => void;
   redoZones: () => void;
+  /* Phase 6 (Day 2) — freeform roads */
+  selectRoad: (id: string | null) => void;
+  addRoad: (road: SpatialRoad) => void;
+  removeRoad: (id: string) => void;
+  updateRoad: (road: SpatialRoad) => void;
   /**
    * GIS bounding-box import (PRD §7, Phase 4). Fetches the imported sparse
    * tiles, merges them into the authoritative state (existing tiles win), and
@@ -402,7 +445,8 @@ export function useCityPlanner(): CityPlanner {
           boundsRef.current ?? undefined,
           undefined,
           stateRef.current.freeformMode,
-          stateRef.current.zones
+          stateRef.current.zones,
+          stateRef.current.roads
         );
         if (seq !== requestSeq.current) return; // stale response
         dispatch({
@@ -580,19 +624,44 @@ export function useCityPlanner(): CityPlanner {
         stateRef.current.tiles,
         response.updated_grid
       );
-      if (added > 0) {
-        const next = { ...stateRef.current, tiles: merged };
+
+      const importedZones: SpatialZone[] = (response.spatial_zones ?? []).map((sz) => ({
+        id: sz.id,
+        type: (sz.type as 1 | 2 | 3 | 5) ?? 1,
+        position: sz.position,
+        rotation: sz.rotation,
+        footprint: sz.footprint,
+        attributes: {},
+      }));
+
+      const importedRoads: SpatialRoad[] = (response.spatial_roads ?? []).map((sr) => ({
+        id: sr.id,
+        type: (sr.type as 4 | 40 | 41 | 42 | 43) ?? 41,
+        points: sr.points,
+        width: sr.width,
+      }));
+
+      const hasNewSpatial = importedZones.length > 0 || importedRoads.length > 0;
+
+      if (added > 0 || hasNewSpatial) {
+        const newZones = [...stateRef.current.zones, ...importedZones];
+        const newRoads = [...stateRef.current.roads, ...importedRoads];
+        const next = { ...stateRef.current, tiles: merged, zones: newZones, roads: newRoads };
         stateRef.current = next;
-        // Commit imported tiles to the rendered state atomically so the
-        // canvas and header refresh (PRD §19 single authoritative state).
-        dispatch({ type: "IMPORT_MERGED", tiles: merged });
+        dispatch({
+          type: "IMPORT_MERGED",
+          tiles: merged,
+          zones: importedZones,
+          roads: importedRoads,
+        });
       }
       // Re-score after import (no latest action → no local delta).
       void runCalculation(added > 0 ? merged : new Map(stateRef.current.tiles), null);
-      return { imported: response.tiles_imported, added };
+      return { imported: response.tiles_imported, added: added + importedRoads.length + importedZones.length };
     },
     [runCalculation]
   );
+
 
   // Initial connection probe: score the empty city once on mount.
   useEffect(() => {
@@ -705,6 +774,55 @@ export function useCityPlanner(): CityPlanner {
     dispatch({ type: "REDO" });
   }, []);
 
+  // --- Phase 6 (Day 2): freeform roads -----------------------------------
+
+  const selectRoad = useCallback((id: string | null) => {
+    dispatch({ type: "SELECT_ROAD", id });
+  }, []);
+
+  const addRoad = useCallback(
+    (road: SpatialRoad) => {
+      dispatch({ type: "ROAD_ADD", road });
+      stateRef.current = {
+        ...stateRef.current,
+        roads: [...stateRef.current.roads, road],
+        selectedRoadId: road.id,
+      };
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  const removeRoad = useCallback(
+    (id: string) => {
+      const next = stateRef.current.roads.filter((r) => r.id !== id);
+      stateRef.current = { ...stateRef.current, roads: next, selectedRoadId: null };
+      dispatch({ type: "ROAD_REMOVE", id });
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  const updateRoad = useCallback(
+    (road: SpatialRoad) => {
+      const next = stateRef.current.roads.map((r) => (r.id === road.id ? road : r));
+      stateRef.current = { ...stateRef.current, roads: next };
+      dispatch({ type: "ROAD_UPDATE", road });
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  const updateZone = useCallback(
+    (zone: SpatialZone) => {
+      const next = stateRef.current.zones.map((z) => (z.id === zone.id ? zone : z));
+      stateRef.current = { ...stateRef.current, zones: next };
+      dispatch({ type: "ZONE_UPDATE", zone });
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
   return {
     state,
     setTool,
@@ -724,10 +842,15 @@ export function useCityPlanner(): CityPlanner {
     moveZone,
     rotateZone,
     resizeZone,
+    updateZone,
     beginSpatialGesture,
     commitZones,
     undoZones,
     redoZones,
+    selectRoad,
+    addRoad,
+    removeRoad,
+    updateRoad,
   };
 }
 

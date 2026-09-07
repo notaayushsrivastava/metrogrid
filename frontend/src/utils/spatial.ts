@@ -128,11 +128,24 @@ function zoneToTileObject(zone: SpatialZone): TileObject {
  * contract is unchanged, so Phase 1–4 flows and the backend never learn
  * about zones. Pure: identical inputs → identical map.
  */
+const ROAD_TYPES = new Set([4, 40, 41, 42, 43]);
+
+/**
+ * Derive the effective sparse tile map from legacy tiles + freeform zones.
+ *
+ * Paint order: legacy tiles first, then zones in insertion order.
+ * Roads always win — zones can never overwrite road corridors.
+ */
 export function deriveTileMap(tiles: GridState, zones: SpatialZone[]): GridState {
   const derived = new Map(tiles);
   for (const zone of zones) {
     for (const { x, y } of zoneCoveredCells(zone)) {
-      derived.set(`${x},${y}`, zoneToTileObject(zone));
+      const key = `${x},${y}`;
+      const existing = derived.get(key);
+      if (existing && ROAD_TYPES.has(existing.type)) {
+        continue; // Protect roads from zone overlap
+      }
+      derived.set(key, zoneToTileObject(zone));
     }
   }
   return derived;
@@ -158,6 +171,17 @@ export function occupiedCellsOutside(
   return occupied;
 }
 
+/** True when the zone overlaps any road tile cell. */
+export function zoneOverlapsRoad(
+  tiles: GridState,
+  zone: SpatialZone
+): boolean {
+  return zoneCoveredCells(zone).some(({ x, y }) => {
+    const tile = tiles.get(`${x},${y}`);
+    return tile && ROAD_TYPES.has(tile.type);
+  });
+}
+
 /** True when the zone overlaps any pre-existing tile or other zone. */
 export function zoneOverlaps(
   tiles: GridState,
@@ -167,6 +191,7 @@ export function zoneOverlaps(
   const occupied = occupiedCellsOutside(tiles, zones, zone);
   return zoneCoveredCells(zone).some(({ x, y }) => occupied.has(`${x},${y}`));
 }
+
 
 /**
  * Corner-anchored resize: drag corner `cornerIndex` (0..3 in zoneCorners

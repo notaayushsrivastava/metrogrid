@@ -119,13 +119,13 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
         <div className="flex items-center gap-2 pr-6">
           <MapPin className="size-4 text-primary" aria-hidden="true" />
           <SheetTitle className="font-display text-sm font-bold tracking-wide text-foreground">
-            Import a real area
+            Import Road Layout
           </SheetTitle>
         </div>
         <SheetDescription id="gis-panel-desc" className="text-xs leading-relaxed text-muted-foreground">
-          Click two corners on the map to select an area. Streets and buildings
-          become editable MetroGrid tiles.
+          Click two corners on the map to select an area. Street polylines and road networks are imported directly into the canvas.
         </SheetDescription>
+
 
         <AreaMapPicker selection={selection} onSelect={setSelection} nonce={nonce} />
 
@@ -220,8 +220,9 @@ export function GisImportPanel({ open, onOpenChange, planner }: GisImportPanelPr
               Importing… (up to a minute)
             </>
           ) : (
-            "Import area"
+            "Import Road Layout"
           )}
+
         </Button>
 
         <div aria-live="polite">

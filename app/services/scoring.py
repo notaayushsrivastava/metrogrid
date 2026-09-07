@@ -59,7 +59,16 @@ def compute_freeform_raw_scores(
 
     if zones:
         for z in zones:
-            area = z.area if z.area is not None else (z.footprint.width * z.footprint.depth)
+            effective_mult = 1.0
+            if z.attributes:
+                density = float(z.attributes.get("density", 1.0) or 1.0)
+                intensity = float(z.attributes.get("developmentIntensity", 1.0) or 1.0)
+                floors = float(z.attributes.get("floors", 1.0) or 1.0)
+                effective_mult = max(0.1, density * intensity * (1.0 + (floors - 1.0) * 0.2))
+
+            base_area = z.area if z.area is not None else (z.footprint.width * z.footprint.depth)
+            area = base_area * effective_mult
+
             if z.type == config.RESIDENTIAL:
                 res_area += area
             elif z.type == config.COMMERCIAL:

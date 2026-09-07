@@ -142,11 +142,36 @@ export interface GisImportRequest {
   grid_origin: GisGridOrigin;
 }
 
+export interface GisSpatialZone {
+  id: string;
+  type: number;
+  position: { x: number; y: number };
+  rotation: number;
+  footprint: { width: number; depth: number };
+  attributes?: Record<string, unknown>;
+}
+
+export interface GisSpatialRoadPoint {
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface GisSpatialRoad {
+  id: string;
+  type: number;
+  points: GisSpatialRoadPoint[];
+  width: number;
+}
+
 /** `POST /api/gis/import` response (PRD §12.2, exact contract). */
 export interface GisImportResponse {
   tiles_imported: number;
   updated_grid: Record<string, { type: number }>;
+  spatial_zones?: GisSpatialZone[];
+  spatial_roads?: GisSpatialRoad[];
 }
+
 
 /** Transient floating feedback at a placement (PRD §11). */
 export interface Feedback {

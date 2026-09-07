@@ -1,50 +1,64 @@
 /**
- * SpatialCanvas — freeform zone rendering + interaction (PRD Phase 5, Day 2).
+ * SpatialCanvas — freeform zone + road rendering & interaction (PRD Phase 5 & Phase 6, Day 2).
  *
- * Sits on top of the grid CityCanvas. Renders each SpatialZone as a rotated
- * footprint polyline in its tile color, with hover labels; when a zone is
- * selected (Select tool): a move handle, a rotation handle, and four corner
- * resize handles. In freeform-placement mode a ghost footprint follows the
- * cursor (R rotates 15°); collision with existing content tints it amber.
- *
- * This is a native <canvas> overlay — no extra 2D engine (§4.1) — and it only
- * participates in f(viewport) redraws (no React re-render per frame).
+ * Sits on top of the grid CityCanvas.
+ * - Renders SpatialZone footprints & handles.
+ * - Renders SpatialRoad multi-segment polylines, custom stroke widths, animated traffic flow lines,
+ *   and vertex node editing handles.
+ * - Enables click-to-draw multi-segment road creation (double-click/Enter to commit).
  */
 
 import { useCallback, useEffect, useRef } from "react";
 import { cellSize, cellToScreenPx, screenToGrid, type Camera, type GridPoint } from "../../utils/coordinates";
 import { zoneColor, zoneCorners, zoneLabel, zoneOverlaps, resizeFromCorner } from "../../utils/spatial";
 import type { GridState } from "../../types/city";
-import type { SpatialZone } from "../../types/spatial";
+import type { SpatialZone, SpatialRoad, SpatialRoadPoint, RoadSubtype } from "../../types/spatial";
+import { getDefaultRoadWidth, rotateRoadAroundCenter } from "../../utils/freeformRoads";
+
 
 export type SpatialDrag =
   | { kind: "move"; zoneId: string; offset: { x: number; y: number } }
   | { kind: "rotate"; zoneId: string }
-  | { kind: "resize"; zoneId: string; corner: number };
+  | { kind: "resize"; zoneId: string; corner: number }
+  | { kind: "roadNode"; roadId: string; nodeIndex: number };
 
 interface SpatialCanvasProps {
   camera: Camera;
   tiles: GridState;
   zones: SpatialZone[];
+  roads?: SpatialRoad[];
   freeformMode: boolean;
   activeTool: string;
   selectedZoneId: string | null;
+  selectedRoadId?: string | null;
+  hideZones?: boolean;
   onAdd: (world: GridPoint) => void;
   onSelect: (id: string | null) => void;
   onMove: (id: string, world: GridPoint) => void;
   onRotate: (id: string, deg: number) => void;
-  /** Corner resize — receives the full resized zone (pure geometry). */
   onResize: (zone: SpatialZone, corner: number, world: GridPoint) => void;
-  /** Begin a spatial gesture (pre-drag snapshot for undo). */
   onGestureStart: () => void;
-  /** Commit an in-progress drag/rotate/resize to the undo stack. */
   commitZones: () => void;
-  /** Remove a zone (Delete key). */
   removeZone: (id: string) => void;
+
+  /* Phase 6 freeform road callbacks */
+  onAddRoad?: (road: SpatialRoad) => void;
+  onSelectRoad?: (id: string | null) => void;
+  onUpdateRoad?: (road: SpatialRoad) => void;
+  onRemoveRoad?: (id: string) => void;
 }
+
 
 const HANDLE_R = 5;
 const GHOST_ROTATE_STEP = 15;
+
+const ROAD_COLOR: Record<number, string> = {
+  40: "#34d399", // Pedestrian
+  41: "#94a3b8", // Local
+  42: "#fbbf24", // Transit Avenue
+  43: "#f87171", // Express Highway
+  4:  "#64748b", // Default Road
+};
 
 export function SpatialCanvas(props: SpatialCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -52,11 +66,18 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
   const ghostRef = useRef<GridPoint | null>(null);
   const ghostRotRef = useRef(0);
   const selRef = useRef<string | null>(null);
+  const selRoadRef = useRef<string | null>(null);
   const zonesRef = useRef<SpatialZone[]>(props.zones);
+  const roadsRef = useRef<SpatialRoad[]>(props.roads ?? []);
+  const draftRoadPointsRef = useRef<SpatialRoadPoint[]>([]);
+  const animFrameRef = useRef<number | null>(null);
+
   zonesRef.current = props.zones;
+  roadsRef.current = props.roads ?? [];
+  selRef.current = props.selectedZoneId;
+  selRoadRef.current = props.selectedRoadId ?? null;
   const propsRef = useRef(props);
   propsRef.current = props;
-  selRef.current = props.selectedZoneId;
 
   const worldFromEvent = useCallback((ev: MouseEvent): GridPoint | null => {
     const c = canvasRef.current;
@@ -65,6 +86,22 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     const cell = screenToGrid(rect, ev.clientX, ev.clientY, propsRef.current.camera);
     if (!cell) return null;
     return { x: cell.x + 0.5, y: cell.y + 0.5 };
+  }, []);
+
+  const isRoadToolActive = useCallback((tool: string): boolean => {
+    return (
+      tool === "road" ||
+      tool === "road_local" ||
+      tool === "road_transit" ||
+      tool === "road_highway"
+    );
+  }, []);
+
+  const getSubtypeFromTool = useCallback((tool: string): RoadSubtype => {
+    if (tool === "road_local") return 41;
+    if (tool === "road_transit") return 42;
+    if (tool === "road_highway") return 43;
+    return 4;
   }, []);
 
   const redraw = useCallback(() => {
@@ -76,11 +113,41 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     const size = cellSize(p.camera);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const to = (wx: number, wy: number) => cellToScreenPx(p.camera, wx, wy);
+    const time = Date.now() / 1000;
 
-    for (let i = p.zones.length - 1; i >= 0; i--) {
-      drawZone(ctx, p.zones[i], to, size, p.zones[i].id === selRef.current);
+    // 1. Draw Freeform Roads
+    const roads = p.roads ?? [];
+    for (const road of roads) {
+      drawRoad(
+        ctx,
+        road,
+        to,
+        size,
+        road.id === selRoadRef.current,
+        time
+      );
     }
-    if (p.freeformMode && p.activeTool !== "select" && ghostRef.current) {
+
+    // 2. Draw Active Road Creation Polyline Draft
+    if (draftRoadPointsRef.current.length > 0) {
+      drawRoadDraft(ctx, draftRoadPointsRef.current, ghostRef.current, to, size);
+    }
+
+    // 3. Draw Freeform Spatial Zones (hidden when hideZones is enabled)
+    if (!p.hideZones) {
+      for (let i = p.zones.length - 1; i >= 0; i--) {
+        drawZone(ctx, p.zones[i], to, size, p.zones[i].id === selRef.current);
+      }
+    }
+
+
+    // 4. Ghost Footprint for Zone placement
+    if (
+      p.freeformMode &&
+      !isRoadToolActive(p.activeTool) &&
+      p.activeTool !== "select" &&
+      ghostRef.current
+    ) {
       const ghost: SpatialZone = {
         id: "__ghost",
         type: 1,
@@ -91,13 +158,14 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       };
       drawGhost(ctx, ghost, to, size, zoneOverlaps(p.tiles, p.zones, ghost));
     }
-  }, []);
+  }, [isRoadToolActive]);
 
-  // Size canvas to its parent and redraw when it changes.
+  // Size canvas & setup animation loop for traffic flows
   useEffect(() => {
     const canvas = canvasRef.current;
     const parent = canvas?.parentElement;
     if (!canvas || !parent) return;
+
     const resize = () => {
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.max(1, parent.clientWidth * dpr);
@@ -109,23 +177,47 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(parent);
-    return () => ro.disconnect();
+
+    const animate = () => {
+      redraw();
+      animFrameRef.current = requestAnimationFrame(animate);
+    };
+    animFrameRef.current = requestAnimationFrame(animate);
+
+    return () => {
+      ro.disconnect();
+      if (animFrameRef.current !== null) {
+        cancelAnimationFrame(animFrameRef.current);
+      }
+    };
   }, [redraw]);
 
-  // Redraw whenever camera / zones / mode change.
-  useEffect(() => {
-    redraw();
-  }, [redraw, props.camera, props.zones, props.freeformMode, props.activeTool, props.selectedZoneId]);
-
-  // Pointer + keyboard interaction.
+  // Pointer & Keyboard interactions for zone + freeform road authoring
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
+    const commitDraftRoad = () => {
+      const pts = draftRoadPointsRef.current;
+      if (pts.length >= 2) {
+        const type = getSubtypeFromTool(propsRef.current.activeTool);
+        const newRoad: SpatialRoad = {
+          id: `road_${Date.now()}`,
+          type,
+          points: [...pts],
+          width: getDefaultRoadWidth(type),
+        };
+        propsRef.current.onAddRoad?.(newRoad);
+      }
+      draftRoadPointsRef.current = [];
+      redraw();
+    };
+
     const onPointerMove = (ev: PointerEvent) => {
+      const world = worldFromEvent(ev);
+      if (!world) return;
+
       if (dragRef.current) {
-        const world = worldFromEvent(ev);
-        if (!world) return;
         const p = propsRef.current;
         const d = dragRef.current;
         if (d.kind === "move") {
@@ -142,29 +234,96 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
             const resized = resizeFromCorner(z, d.corner, world);
             p.onResize(resized, d.corner, world);
           }
+        } else if (d.kind === "roadNode") {
+          const r = roadsRef.current.find((rd) => rd.id === d.roadId);
+          if (r) {
+            const newPts = [...r.points];
+            newPts[d.nodeIndex] = { x: world.x, y: world.y };
+            p.onUpdateRoad?.({ ...r, points: newPts });
+          }
         }
         redraw();
         return;
       }
-      const world = worldFromEvent(ev);
-      if (propsRef.current.freeformMode && world) ghostRef.current = world;
+
+      if (propsRef.current.freeformMode) {
+        ghostRef.current = world;
+      }
     };
 
     const onPointerDown = (ev: PointerEvent) => {
+      if (ev.button !== 0) return; // Only primary click
       const world = worldFromEvent(ev);
       if (!world) return;
       const p = propsRef.current;
-      const hit = zonesRef.current.find((z) =>
-        Math.abs(z.position.x - world.x) < 0.5 && Math.abs(z.position.y - world.y) < 0.5
-      );
-      if (hit) {
-        p.onSelect(hit.id);
-        p.onGestureStart();
-        dragRef.current = { kind: "move", zoneId: hit.id, offset: { x: world.x - hit.position.x, y: world.y - hit.position.y } };
+
+      // 1. If road tool active, add vertex to draft road
+      if (p.freeformMode && isRoadToolActive(p.activeTool)) {
+        draftRoadPointsRef.current.push({ x: world.x, y: world.y });
+        redraw();
         return;
       }
-      if (p.freeformMode) { p.onAdd(world); return; }
-      if (p.activeTool === "select") p.onSelect(null);
+
+      // 2. Check road node drag hits if a road is selected
+      if (selRoadRef.current) {
+        const selRoad = roadsRef.current.find((r) => r.id === selRoadRef.current);
+        if (selRoad) {
+          for (let i = 0; i < selRoad.points.length; i++) {
+            const pt = selRoad.points[i];
+            if (Math.hypot(pt.x - world.x, pt.y - world.y) < 1.0) {
+              dragRef.current = { kind: "roadNode", roadId: selRoad.id, nodeIndex: i };
+              return;
+            }
+          }
+        }
+      }
+
+      // 3. Check road selection hit
+      for (const road of roadsRef.current) {
+        for (let i = 0; i < road.points.length - 1; i++) {
+          const p1 = road.points[i];
+          const p2 = road.points[i + 1];
+          const dist = Math.abs(
+            (p2.y - p1.y) * world.x - (p2.x - p1.x) * world.y + p2.x * p1.y - p2.y * p1.x
+          ) / Math.hypot(p2.y - p1.y, p2.x - p1.x);
+
+          if (dist < (road.width / 10.0) + 0.5) {
+            p.onSelectRoad?.(road.id);
+            p.onSelect(null);
+            return;
+          }
+        }
+      }
+
+      // 4. Check zone hit
+      const hitZone = zonesRef.current.find((z) =>
+        Math.abs(z.position.x - world.x) < 0.5 && Math.abs(z.position.y - world.y) < 0.5
+      );
+      if (hitZone) {
+        p.onSelect(hitZone.id);
+        p.onSelectRoad?.(null);
+        p.onGestureStart();
+        dragRef.current = {
+          kind: "move",
+          zoneId: hitZone.id,
+          offset: { x: world.x - hitZone.position.x, y: world.y - hitZone.position.y },
+        };
+        return;
+      }
+
+      if (p.freeformMode && !isRoadToolActive(p.activeTool)) {
+        p.onAdd(world);
+        return;
+      }
+
+      if (p.activeTool === "select") {
+        p.onSelect(null);
+        p.onSelectRoad?.(null);
+      }
+    };
+
+    const onDblClick = () => {
+      commitDraftRoad();
     };
 
     const onPointerUp = () => {
@@ -177,28 +336,59 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
 
     const onKeyDown = (ev: KeyboardEvent) => {
       const p = propsRef.current;
-      if (ev.key === "r" || ev.key === "R") {
-        ghostRotRef.current = (ghostRotRef.current + GHOST_ROTATE_STEP) % 360;
+      if (ev.key === "Enter") {
+        commitDraftRoad();
+        return;
+      }
+      if (ev.key === "Escape") {
+        draftRoadPointsRef.current = [];
         redraw();
         return;
       }
-      if ((ev.key === "Delete" || ev.key === "Backspace") && selRef.current) {
-        p.removeZone(selRef.current);
-        p.onSelect(null);
+      if (ev.key === "r" || ev.key === "R") {
+        if (selRoadRef.current) {
+          const road = roadsRef.current.find((r) => r.id === selRoadRef.current);
+          if (road) {
+            const rotated = rotateRoadAroundCenter(road, GHOST_ROTATE_STEP);
+            p.onUpdateRoad?.(rotated);
+          }
+        } else if (selRef.current) {
+          const zone = zonesRef.current.find((z) => z.id === selRef.current);
+          if (zone) {
+            p.onRotate(zone.id, (zone.rotation + GHOST_ROTATE_STEP) % 360);
+          }
+        } else {
+          ghostRotRef.current = (ghostRotRef.current + GHOST_ROTATE_STEP) % 360;
+        }
+        redraw();
+        return;
+      }
+
+      if (ev.key === "Delete" || ev.key === "Backspace") {
+        if (selRoadRef.current) {
+          p.onRemoveRoad?.(selRoadRef.current);
+          p.onSelectRoad?.(null);
+        } else if (selRef.current) {
+          p.removeZone(selRef.current);
+          p.onSelect(null);
+        }
       }
     };
 
     canvas.addEventListener("pointermove", onPointerMove);
     canvas.addEventListener("pointerdown", onPointerDown);
+    canvas.addEventListener("dblclick", onDblClick);
     window.addEventListener("pointerup", onPointerUp);
     window.addEventListener("keydown", onKeyDown);
+
     return () => {
       canvas.removeEventListener("pointermove", onPointerMove);
       canvas.removeEventListener("pointerdown", onPointerDown);
+      canvas.removeEventListener("dblclick", onDblClick);
       window.removeEventListener("pointerup", onPointerUp);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [worldFromEvent, redraw]);
+  }, [worldFromEvent, redraw, getSubtypeFromTool, isRoadToolActive]);
 
   return (
     <canvas
@@ -207,12 +397,113 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         position: "absolute",
         top: 0,
         left: 0,
-        pointerEvents: props.freeformMode || props.activeTool === "select" ? "auto" : "none",
+        pointerEvents:
+          props.freeformMode || props.activeTool === "select" ? "auto" : "none",
         outline: "none",
         touchAction: "none",
       }}
     />
   );
+}
+
+function drawRoad(
+  ctx: CanvasRenderingContext2D,
+  road: SpatialRoad,
+  to: (x: number, y: number) => { px: number; py: number },
+  size: number,
+  selected: boolean,
+  time: number
+): void {
+  if (road.points.length < 2) return;
+
+  const points = road.points.map((pt) => to(pt.x, pt.y));
+  const color = ROAD_COLOR[road.type] ?? "#64748b";
+  const strokeWidthPx = Math.max(3, (road.width / 10.0) * size);
+
+  ctx.save();
+
+  // Outer casing
+  ctx.beginPath();
+  points.forEach((pt, i) => {
+    if (i === 0) ctx.moveTo(pt.px, pt.py);
+    else ctx.lineTo(pt.px, pt.py);
+  });
+  ctx.lineCap = "round";
+  ctx.lineJoin = "round";
+  ctx.strokeStyle = selected ? "#ffd166" : color;
+  ctx.lineWidth = strokeWidthPx + (selected ? 4 : 2);
+  ctx.stroke();
+
+  // Inner asphalt fill
+  ctx.beginPath();
+  points.forEach((pt, i) => {
+    if (i === 0) ctx.moveTo(pt.px, pt.py);
+    else ctx.lineTo(pt.px, pt.py);
+  });
+  ctx.strokeStyle = "#1e293b";
+  ctx.lineWidth = Math.max(1, strokeWidthPx - 2);
+  ctx.stroke();
+
+  // Animated Glowing Traffic Flow Dash Line
+  ctx.beginPath();
+  points.forEach((pt, i) => {
+    if (i === 0) ctx.moveTo(pt.px, pt.py);
+    else ctx.lineTo(pt.px, pt.py);
+  });
+  ctx.setLineDash([8, 12]);
+  ctx.lineDashOffset = -time * 30;
+  ctx.strokeStyle = road.type === 43 ? "#ffd166" : "#7cffb2";
+  ctx.lineWidth = Math.max(1.5, strokeWidthPx * 0.25);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Render Control Nodes if Selected
+  if (selected) {
+    points.forEach((pt) => {
+      ctx.beginPath();
+      ctx.arc(pt.px, pt.py, HANDLE_R + 2, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffd166";
+      ctx.fill();
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  }
+
+  ctx.restore();
+}
+
+function drawRoadDraft(
+  ctx: CanvasRenderingContext2D,
+  points: SpatialRoadPoint[],
+  currentHover: GridPoint | null,
+  to: (x: number, y: number) => { px: number; py: number },
+  size: number
+): void {
+  const pts = points.map((pt) => to(pt.x, pt.y));
+  if (currentHover) {
+    pts.push(to(currentHover.x, currentHover.y));
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  pts.forEach((pt, i) => {
+    if (i === 0) ctx.moveTo(pt.px, pt.py);
+    else ctx.lineTo(pt.px, pt.py);
+  });
+  ctx.setLineDash([6, 4]);
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = Math.max(3, size * 0.8);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  pts.forEach((pt) => {
+    ctx.beginPath();
+    ctx.arc(pt.px, pt.py, 4, 0, Math.PI * 2);
+    ctx.fillStyle = "#38bdf8";
+    ctx.fill();
+  });
+  ctx.restore();
 }
 
 function drawZone(
@@ -237,7 +528,6 @@ function drawZone(
   ctx.lineWidth = selected ? 2.2 : 1.4;
   ctx.stroke();
 
-  // Selected zone: move center + corner resize handles (non-color cues).
   if (selected) {
     const center = to(zone.position.x, zone.position.y);
     ctx.fillStyle = "#ffd166";

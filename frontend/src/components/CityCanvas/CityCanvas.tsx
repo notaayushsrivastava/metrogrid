@@ -47,8 +47,10 @@ interface CityCanvasProps {
   onBoundsChange?: (bounds: GridBounds) => void;
   /* Phase 5 (Day 2): freeform spatial overlay. Omit to disable freeform. */
   zones?: SpatialZone[];
+  roads?: import("../../types/spatial").SpatialRoad[];
   freeformMode?: boolean;
   selectedZoneId?: string | null;
+  selectedRoadId?: string | null;
   onAddZone?: (world: { x: number; y: number }) => void;
   onSelectZone?: (id: string | null) => void;
   onMoveZone?: (id: string, world: { x: number; y: number }) => void;
@@ -57,6 +59,12 @@ interface CityCanvasProps {
   onGestureStart?: () => void;
   onCommitZones?: () => void;
   onRemoveZone?: (id: string) => void;
+
+  /* Phase 6 (Day 2): freeform roads */
+  onAddRoad?: (road: import("../../types/spatial").SpatialRoad) => void;
+  onSelectRoad?: (id: string | null) => void;
+  onUpdateRoad?: (road: import("../../types/spatial").SpatialRoad) => void;
+  onRemoveRoad?: (id: string) => void;
 }
 
 interface Viewport {
@@ -78,14 +86,19 @@ function isRoadType(type: TileType): boolean {
  * Center and zoom the view so all placed tiles (and the origin) fit.
  * Used at startup and by the reset-view control.
  */
-function fitCamera(tiles: GridState, viewport: Viewport): Camera {
+function fitCamera(
+  tiles: GridState,
+  viewport: Viewport,
+  zones?: SpatialZone[],
+  roads?: import("../../types/spatial").SpatialRoad[]
+): Camera {
   let minX = 0;
   let maxX = 0;
   let minY = 0;
   let maxY = 0;
   let has = false;
-  tiles.forEach((_tile, key) => {
-    const [x, y] = key.split(",").map(Number);
+
+  const includePoint = (x: number, y: number) => {
     if (!has) {
       minX = maxX = x;
       minY = maxY = y;
@@ -96,7 +109,27 @@ function fitCamera(tiles: GridState, viewport: Viewport): Camera {
     if (x > maxX) maxX = x;
     if (y < minY) minY = y;
     if (y > maxY) maxY = y;
+  };
+
+  tiles.forEach((_tile, key) => {
+    const [x, y] = key.split(",").map(Number);
+    includePoint(x, y);
   });
+
+  if (zones) {
+    zones.forEach((z) => {
+      includePoint(z.position.x, z.position.y);
+    });
+  }
+
+  if (roads) {
+    roads.forEach((r) => {
+      r.points.forEach((p) => {
+        includePoint(p.x, p.y);
+      });
+    });
+  }
+
   const spanX = Math.max(DEFAULT_VIEW_SPAN / 2, maxX - minX + 1);
   const spanY = Math.max(DEFAULT_VIEW_SPAN / 2, maxY - minY + 1);
   const zoom = clampZoom(
@@ -113,8 +146,8 @@ function fitCamera(tiles: GridState, viewport: Viewport): Camera {
   };
 }
 
-/** Draws a single tile at its screen position. */
-function drawTile(
+/** Draws a single tile at its screen position with animated traffic flow. */
+function drawTileWithTraffic(
   ctx: CanvasRenderingContext2D,
   tiles: GridState,
   type: TileType,
@@ -123,17 +156,14 @@ function drawTile(
   px: number,
   py: number,
   size: number,
-  /** Optional visual yaw in degrees (PRD Phase 4 spatial extensibility). */
-  rotationDeg = 0
+  rotationDeg = 0,
+  trafficOffset = 0
 ): void {
   const meta = TILE_META[type as Exclude<TileType, 0>];
   const inset = 1;
   const s = size - inset * 2;
   const r = Math.max(2, Math.floor(size * 0.12));
 
-  // Future building-model orientation: rotate the base rendering around the
-  // cell center when transform metadata is present. Data-only decoration —
-  // scoring never sees this (PRD §31.1).
   const rotated = rotationDeg !== 0;
   if (rotated) {
     ctx.save();
@@ -148,22 +178,21 @@ function drawTile(
   ctx.fill();
 
   if (isRoadType(type)) {
-    // Connector stripes toward adjacent road tiles. Highway uses a thicker,
-    // warmer stripe; avenues draw a doubled line (visual road hierarchy).
     const cx = px + size / 2;
     const cy = py + size / 2;
+
+    // Base road connector stripe
     ctx.strokeStyle = type === 43 ? "#ffd166" : meta.ink;
-    ctx.lineWidth =
-      type === 43 ? Math.max(2, size * 0.12) : Math.max(1.5, size * 0.08);
-    ctx.setLineDash(
-      type === 40 ? [size * 0.12, size * 0.2] : [size * 0.28, size * 0.22]
-    );
+    ctx.lineWidth = type === 43 ? Math.max(2, size * 0.12) : Math.max(1.5, size * 0.08);
+    ctx.setLineDash(type === 40 ? [size * 0.12, size * 0.2] : [size * 0.28, size * 0.22]);
+
     const neighbors: Array<[number, number]> = [
       [x + 1, y],
       [x - 1, y],
       [x, y + 1],
       [x, y - 1],
     ];
+
     for (const [nx, ny] of neighbors) {
       const n = tiles.get(tileKey(nx, ny));
       if (n && isRoadType(n.type)) {
@@ -173,8 +202,8 @@ function drawTile(
         ctx.moveTo(cx, cy);
         ctx.lineTo(cx + dx * (size / 2), cy + dy * (size / 2));
         ctx.stroke();
+
         if (type === 42) {
-          // Avenue: doubled center line.
           const ox = dy * (size * 0.09);
           const oy = dx * (size * 0.09);
           ctx.beginPath();
@@ -184,12 +213,32 @@ function drawTile(
         }
       }
     }
+
+    // Landing Screen-style Animated Traffic Movement
+    ctx.strokeStyle = type === 43 ? "#ffd166" : "#7cffb2";
+    ctx.lineWidth = Math.max(1.5, size * 0.07);
+    ctx.setLineDash([size * 0.16, size * 0.26]);
+    ctx.lineDashOffset = -trafficOffset;
+
+    for (const [nx, ny] of neighbors) {
+      const n = tiles.get(tileKey(nx, ny));
+      if (n && isRoadType(n.type)) {
+        const dx = nx - x;
+        const dy = ny - y;
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + dx * (size / 2), cy + dy * (size / 2));
+        ctx.stroke();
+      }
+    }
+
     ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
     if (rotated) ctx.restore();
     return;
   }
 
-  // Zone glyph (non-color cue, PRD §14A accessibility).
+  // Zone glyph
   ctx.fillStyle = meta.ink;
   ctx.font = `700 ${Math.floor(size * 0.42)}px ui-sans-serif, system-ui, sans-serif`;
   ctx.textAlign = "center";
@@ -241,8 +290,10 @@ export function CityCanvas({
   onHoverChange,
   onBoundsChange,
   zones,
+  roads,
   freeformMode,
   selectedZoneId,
+  selectedRoadId,
   onAddZone,
   onSelectZone,
   onMoveZone,
@@ -251,6 +302,10 @@ export function CityCanvas({
   onGestureStart,
   onCommitZones,
   onRemoveZone,
+  onAddRoad,
+  onSelectRoad,
+  onUpdateRoad,
+  onRemoveRoad,
 }: CityCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -293,7 +348,7 @@ export function CityCanvas({
   // Initialize camera once the viewport is known.
   useEffect(() => {
     if (!camera && viewport.width > 0 && viewport.height > 0) {
-      setCamera(fitCamera(tiles, viewport));
+      setCamera(fitCamera(tiles, viewport, zones, roads));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewport]);
@@ -317,7 +372,7 @@ export function CityCanvas({
   }, [camera, viewport]);
 
   // Draw runs directly on camera/tiles changes (no React reconciliation).
-  const draw = useCallback(() => {
+  const draw = useCallback((trafficOffset: number = 0) => {
     const canvas = canvasRef.current;
     const cam = cameraRef.current;
     if (!canvas || !cam || viewportRef.current.width === 0) return;
@@ -355,7 +410,7 @@ export function CityCanvas({
         if (px + cell < 0 || px > cssWidth || py + cell < 0 || py > cssHeight) {
           continue; // per-tile cull within the chunk's margin
         }
-        drawTile(
+        drawTileWithTraffic(
           ctx,
           tiles,
           entry.type,
@@ -364,7 +419,8 @@ export function CityCanvas({
           px,
           py,
           cell,
-          entry.tile?.transform?.rotation?.y ?? 0
+          entry.tile?.transform?.rotation?.y ?? 0,
+          trafficOffset
         );
       }
     }
@@ -380,9 +436,22 @@ export function CityCanvas({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chunkIndex, visibleChunkKeys, hover, hoverColor]);
 
+  const animFrameRef = useRef<number>(0);
+  const trafficOffsetRef = useRef<number>(0);
+
   useEffect(() => {
-    draw();
-  });
+    let active = true;
+    const animateLoop = (timestamp: number) => {
+      trafficOffsetRef.current = (timestamp * 0.035) % 100;
+      draw(trafficOffsetRef.current);
+      if (active) animFrameRef.current = requestAnimationFrame(animateLoop);
+    };
+    animFrameRef.current = requestAnimationFrame(animateLoop);
+    return () => {
+      active = false;
+      if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current);
+    };
+  }, [draw]);
 
   const pointerToGrid = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
@@ -531,17 +600,19 @@ export function CityCanvas({
         onTouchEnd={() => (pinchRef.current = null)}
       />
 
-      {/* Phase 5 (Day 2): freeform spatial overlay — shares the camera. */}
+      {/* Phase 5 & 6 (Day 2): freeform spatial overlay — shares the camera. */}
       {camera &&
         (zones ?? []).length >= 0 &&
-        (freeformMode !== undefined || (zones && zones.length > 0)) && (
+        (freeformMode !== undefined || (zones && zones.length > 0) || (roads && roads.length > 0)) && (
         <SpatialCanvas
           camera={camera}
           tiles={tiles}
           zones={zones ?? []}
+          roads={roads ?? []}
           freeformMode={freeformMode ?? false}
-          activeTool={toolActive ? "paint" : "select"}
+          activeTool={toolActive ? hoverColor : "select"}
           selectedZoneId={selectedZoneId ?? null}
+          selectedRoadId={selectedRoadId ?? null}
           onAdd={(world) => onAddZone?.(world)}
           onSelect={(id) => onSelectZone?.(id)}
           onMove={(id, world) => onMoveZone?.(id, world)}
@@ -550,6 +621,10 @@ export function CityCanvas({
           onGestureStart={() => onGestureStart?.()}
           commitZones={() => onCommitZones?.()}
           removeZone={(id) => onRemoveZone?.(id)}
+          onAddRoad={(road) => onAddRoad?.(road)}
+          onSelectRoad={(id) => onSelectRoad?.(id)}
+          onUpdateRoad={(road) => onUpdateRoad?.(road)}
+          onRemoveRoad={(id) => onRemoveRoad?.(id)}
         />
       )}
 
@@ -623,7 +698,7 @@ export function CityCanvas({
               <button
                 type="button"
                 aria-label="Reset view"
-                onClick={() => setCamera(fitCamera(tiles, viewport))}
+                onClick={() => setCamera(fitCamera(tiles, viewport, zones, roads))}
                 className="px-3 py-1.5 text-[10px] font-bold outline-none transition-colors hover:bg-secondary/70 focus-visible:ring-2 focus-visible:ring-ring"
               >
                 ⟳
@@ -643,7 +718,7 @@ export function CityCanvas({
 
       {/* Empty state (PRD §1.3 Phase 0, Phase 4 polish). Illustration from a
           Runway-generated visual treatment; purely decorative. */}
-      {tiles.size === 0 && (
+      {tiles.size === 0 && (zones ?? []).length === 0 && (roads ?? []).length === 0 && (
         <div className="mg-rise pointer-events-none absolute inset-0 flex items-center justify-center p-4">
           <div className="flex max-w-md flex-col items-center gap-3 rounded-xl border border-border/70 bg-card/85 px-6 py-5 text-center shadow-xl backdrop-blur">
             <img

@@ -31,6 +31,7 @@ export interface FreeformZoneMesh {
   footprint: FreeformFootprint;
   area: number; // width * depth in sq meters
   model_url?: string;
+  attributes?: SpatialZone["attributes"];
 }
 
 /**
@@ -40,10 +41,15 @@ export function calculatePhysicalFootprint(footprint: { width: number; depth: nu
   return Math.max(0.01, footprint.width * footprint.depth);
 }
 
+function isRoadTileType(type: number): boolean {
+  return type === 4 || type === 40 || type === 41 || type === 42 || type === 43;
+}
+
 /**
  * State Translation Function:
  * Parses existing grid state (tiles + zones) and converts integer x,y coordinates
  * into continuous floating-point (x, 0, z) 3D vectors scaled to real-world meter dimensions.
+ * Road tiles are excluded as roads render as polylines/surfaces.
  *
  * @param tiles Discrete integer grid state Map ("x,y" -> TileObject)
  * @param zones Optional array of SpatialZones from drafting phase
@@ -57,8 +63,10 @@ export function translateGridToFreeform(
 ): FreeformZoneMesh[] {
   const result: FreeformZoneMesh[] = [];
 
-  // 1. Convert discrete grid tiles to 3D freeform meshes
+  // 1. Convert discrete grid building tiles (excluding road tiles) to 3D freeform meshes
   tiles.forEach((tile: TileObject, key: string) => {
+    if (isRoadTileType(tile.type)) return;
+
     const [gx, gy] = key.split(",").map(Number);
     if (Number.isNaN(gx) || Number.isNaN(gy)) return;
 
@@ -81,6 +89,8 @@ export function translateGridToFreeform(
 
   // 2. Convert explicit SpatialZones (if any) to 3D freeform meshes
   for (const zone of zones) {
+    if (isRoadTileType(zone.type)) continue;
+
     const posX = zone.position.x * meterScale;
     const posZ = zone.position.y * meterScale;
     const width = Math.max(0.5, zone.footprint.width * meterScale);
@@ -94,11 +104,13 @@ export function translateGridToFreeform(
       footprint: { width, depth },
       area: calculatePhysicalFootprint({ width, depth }),
       model_url: zone.attributes?.model_url,
+      attributes: zone.attributes,
     });
   }
 
   return result;
 }
+
 
 /**
  * Reverse translation helper: converts freeform 3D meshes back to SpatialZone objects
@@ -121,7 +133,8 @@ export function translateFreeformToZones(
       depth: mesh.footprint.depth / meterScale,
     },
     attributes: {
-      model_url: mesh.model_url,
+      ...mesh.attributes,
+      model_url: mesh.model_url ?? mesh.attributes?.model_url,
     },
   }));
 }

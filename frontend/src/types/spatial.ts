@@ -74,10 +74,21 @@ export type SpatialObject = {
 export type ZoneType = 1 | 2 | 3 | 5;
 
 export interface ZoneAttributes {
-  /** Optional user-facing name. */
+  /** User-facing name/label. */
   name?: string;
   /** Armed 3D model reference carried over from the Phase 5 upload flow. */
   model_url?: string;
+  modelUrl?: string;
+  /** Population or job density per unit area. */
+  density?: number;
+  /** Capacity (units/people/jobs). */
+  capacity?: number;
+  /** Number of floors (affects 3D mesh height). */
+  floors?: number;
+  /** Exact height in meters (optional alternative to floors). */
+  height?: number;
+  /** Development intensity multiplier (e.g. 1.0 = standard, 2.0 = high density). */
+  developmentIntensity?: number;
 }
 
 /** A freeform planning zone — the PRD's `SpatialZone` conceptual model. */
@@ -92,4 +103,36 @@ export interface SpatialZone {
   footprint: { width: number; depth: number };
   attributes: ZoneAttributes;
 }
+
+/* -------------------------------------------------------------------------
+ * Phase 6 (Day 2) — Freeform Road Authoring (PRD §1.3 Phase 6, line 549)
+ * -------------------------------------------------------------------------
+ * Multi-segment road geometry with editable control points, arbitrary orientation,
+ * custom width (in meters), and road subtype semantics (4, 40, 41, 42, 43).
+ */
+
+export type RoadSubtype = 4 | 40 | 41 | 42 | 43;
+
+export interface SpatialRoadPoint {
+  x: number; // World / meter coords (X)
+  y: number; // World / meter coords (Z or Y)
+  z?: number; // Elevation
+}
+
+export interface RoadAttributes {
+  name?: string;
+  speedLimit?: number;
+  capacity?: number;
+}
+
+export interface SpatialRoad {
+  id: string;
+  type: RoadSubtype;
+  points: SpatialRoadPoint[];
+  width: number; // Road width in meters (4m ped, 8m local, 12m avenue, 16m highway)
+  elevation?: number;
+  level?: number;
+  attributes?: RoadAttributes;
+}
+
 
