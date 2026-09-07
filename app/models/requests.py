@@ -156,6 +156,7 @@ class CalculateRequest(BaseModel):
     is_freeform: Optional[bool] = False
     zones: Optional[list[SpatialZonePayload]] = None
     roads: Optional[list[SpatialRoadPayload]] = None
+    terrain: Optional[dict[str, float]] = None
 
 
 class PrototypeCalculateRequest(BaseModel):

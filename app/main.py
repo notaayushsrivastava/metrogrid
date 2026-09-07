@@ -102,8 +102,8 @@ def _sparse_from_advanced(req: CalculateRequest) -> dict[tuple[int, int], int]:
 
 def _parse_body(
     payload: object,
-) -> tuple[dict[tuple[int, int], int], LatestAction | None, list | None, list | None, bool]:
-    """Validate the raw payload and produce (sparse tiles, latest action, zones, roads, is_freeform).
+) -> tuple[dict[tuple[int, int], int], LatestAction | None, list | None, list | None, bool, dict[str, float] | None]:
+    """Validate the raw payload and produce (sparse tiles, latest action, zones, roads, is_freeform, terrain).
 
     Accepts both the Advanced Edition sparse contract and the prototype
     matrix contract on the same endpoint.
@@ -122,7 +122,7 @@ def _parse_body(
                     y=proto.latest_placement.y,
                     type=proto.latest_placement.type,
                 )
-            return tiles, action, None, None, False
+            return tiles, action, None, None, False, None
         advanced = CalculateRequest.model_validate(payload)
     except ValidationError as exc:
         raise ApiError(422, f"Validation failed: {exc.errors()}") from exc
@@ -133,6 +133,7 @@ def _parse_body(
         advanced.zones,
         advanced.roads,
         bool(advanced.is_freeform),
+        advanced.terrain,
     )
 
 
@@ -144,9 +145,9 @@ async def calculate(request: Request) -> CalculateResponse:
     except Exception as exc:
         raise ApiError(400, "Request body must be valid JSON") from exc
 
-    tiles, action, zones, roads, is_freeform = _parse_body(payload)
+    tiles, action, zones, roads, is_freeform, terrain = _parse_body(payload)
 
-    scores = compute_scores(tiles, zones=zones, roads=roads, is_freeform=is_freeform)
+    scores = compute_scores(tiles, zones=zones, roads=roads, is_freeform=is_freeform, terrain=terrain)
     delta = compute_local_delta(tiles, action)
 
     return CalculateResponse(

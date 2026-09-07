@@ -7,7 +7,7 @@
  */
 
 import { useEffect, lazy, useRef, Suspense, useState, useMemo } from "react";
-import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D, Undo2, Redo2 } from "lucide-react";
+import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D } from "lucide-react";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
@@ -58,6 +58,8 @@ const GisImportPanel = lazy(() =>
 );
 import { RoadInspectorPanel } from "./components/RoadInspector/RoadInspectorPanel";
 import { ZoneInspectorPanel } from "./components/ZoneInspector/ZoneInspectorPanel";
+import { CreateCustomZoneModal } from "./components/ZoneInspector/CreateCustomZoneModal";
+import { TerrainToolPanel } from "./components/Terrain/TerrainToolPanel";
 import { translateGridToFreeform, translateFreeformToZones } from "./utils/freeform";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
@@ -69,6 +71,9 @@ const KEY_TO_TOOL: Record<string, ToolId> = {
   "5": "road_local",
   "6": "road_transit",
   "7": "road_highway",
+  t: "terrain_raise",
+  g: "terrain_lower",
+  h: "terrain_smooth",
   x: "erase",
 };
 
@@ -99,10 +104,21 @@ export default function App() {
   const [view3d, setView3d] = useState(false);
   const [armedUrl, setArmedUrl] = useState<string | null>(null);
   const [armedName, setArmedName] = useState<string | null>(null);
+  const [customZoneOpen, setCustomZoneOpen] = useState(false);
+  const [terrainMode, setTerrainMode] = useState<import("./types/spatial").TerrainEditMode>("raise");
+  const [terrainRadius, setTerrainRadius] = useState<number>(2);
+  const [terrainStrength, setTerrainStrength] = useState<number>(1.0);
   const bannerRef = useRef<HTMLDivElement>(null);
   const [isFreeformRoute, setIsFreeformRoute] = useState(
     window.location.pathname === "/freeform"
   );
+
+  // Sync terrainMode when tool changes
+  useEffect(() => {
+    if (state.tool === "terrain_raise") setTerrainMode("raise");
+    if (state.tool === "terrain_lower") setTerrainMode("lower");
+    if (state.tool === "terrain_smooth") setTerrainMode("smooth");
+  }, [state.tool]);
 
   const freeformMeshes = useMemo(() => {
     return translateGridToFreeform(state.tiles, state.zones);
@@ -134,12 +150,16 @@ export default function App() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if ((event.key === "Delete" || event.key === "Backspace") && state.selectedZoneId) {
+        planner.removeZone(state.selectedZoneId);
+        return;
+      }
       const next = KEY_TO_TOOL[event.key.toLowerCase()];
       if (next) setTool(next);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setTool]);
+  }, [setTool, state.selectedZoneId, planner]);
 
   useEffect(() => {
     if (state.status === "offline") slideDown(bannerRef.current);
@@ -315,52 +335,11 @@ export default function App() {
         <div className="flex min-h-0 flex-1">
           {/* Tool rail (desktop) */}
           <aside className="hidden w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-card/40 p-3 md:flex">
-            <TilePalette activeTool={state.tool} onSelectTool={setTool} />
-            <div className="flex flex-col gap-1.5 rounded-md border border-border p-2">
-              <p className="text-[10px] font-bold uppercase tracking-widest text-faint">
-                Spatial
-              </p>
-              <div className="flex items-center gap-1.5">
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={state.freeformMode ? "default" : "secondary"}
-                  aria-pressed={state.freeformMode}
-                  onClick={() => planner.setFreeform(!state.freeformMode)}
-                  className="flex-1 justify-start gap-1.5"
-                >
-                  <Move3D className="size-3.5" aria-hidden="true" />
-                  Freeform
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Undo"
-                  title="Undo spatial edit (Ctrl+Z)"
-                  disabled={state.undoStack.length === 0}
-                  onClick={planner.undoZones}
-                >
-                  <Undo2 className="size-4" aria-hidden="true" />
-                </Button>
-                <Button
-                  type="button"
-                  size="icon"
-                  variant="ghost"
-                  aria-label="Redo"
-                  title="Redo spatial edit (Ctrl+Y)"
-                  disabled={state.redoStack.length === 0}
-                  onClick={planner.redoZones}
-                >
-                  <Redo2 className="size-4" aria-hidden="true" />
-                </Button>
-              </div>
-              {state.freeformMode && (
-                <p className="text-[10px] leading-relaxed text-muted-foreground">
-                  Click to place a zone; <kbd className="rounded border border-border px-1 font-mono">R</kbd> rotates the ghost; drag to move, corners to resize.
-                </p>
-              )}
-            </div>
+            <TilePalette
+              activeTool={state.tool}
+              onSelectTool={setTool}
+              onOpenCustomZoneModal={() => setCustomZoneOpen(true)}
+            />
             <ModelUpload
               armedUrl={armedUrl}
               armedName={armedName}
@@ -379,6 +358,23 @@ export default function App() {
 
           {/* City canvas — Freeform 3D route vs Grid 2D/3D route */}
           <main className="mg-backdrop relative min-w-0 flex-1">
+            {/* Terrain Brush Tool Panel Overlay */}
+            {state.tool.startsWith("terrain_") && (
+              <TerrainToolPanel
+                mode={terrainMode}
+                onModeChange={(m) => {
+                  setTerrainMode(m);
+                  if (m === "raise") setTool("terrain_raise");
+                  else if (m === "lower") setTool("terrain_lower");
+                  else if (m === "smooth") setTool("terrain_smooth");
+                }}
+                radius={terrainRadius}
+                onRadiusChange={setTerrainRadius}
+                strength={terrainStrength}
+                onStrengthChange={setTerrainStrength}
+              />
+            )}
+
             {isFreeformRoute ? (
               <Suspense
                 fallback={
@@ -390,6 +386,7 @@ export default function App() {
                 <FreeformCanvas3D
                   meshes={freeformMeshes}
                   roads={state.roads}
+                  terrain={state.terrain}
                   selectedMeshId={state.selectedZoneId}
                   selectedRoadId={state.selectedRoadId}
                   activeTool={state.tool}
@@ -437,6 +434,12 @@ export default function App() {
                 onBoundsChange={planner.reportBounds}
                 zones={state.zones}
                 roads={state.roads}
+                terrain={state.terrain}
+                terrainMode={terrainMode}
+                terrainRadius={terrainRadius}
+                terrainStrength={terrainStrength}
+                onEditTerrain={planner.editTerrain}
+                activeTool={state.tool}
                 freeformMode={state.freeformMode}
                 selectedZoneId={state.selectedZoneId}
                 selectedRoadId={state.selectedRoadId}
@@ -497,6 +500,13 @@ export default function App() {
                 ) : null;
               })()
             )}
+
+            {/* Create Custom Zone Modal */}
+            <CreateCustomZoneModal
+              open={customZoneOpen}
+              onClose={() => setCustomZoneOpen(false)}
+              onAddZone={(zone) => planner.addZone(zone)}
+            />
           </main>
         </div>
 

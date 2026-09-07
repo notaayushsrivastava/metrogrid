@@ -80,6 +80,7 @@ def astar_path_cost(
     tiles: TileMap,
     starts: list[tuple[int, int]],
     goals: list[tuple[int, int]],
+    terrain: dict[str, float] | None = None,
 ) -> float | None:
     """Weighted A* cost from any start node to any goal node.
 
@@ -88,6 +89,7 @@ def astar_path_cost(
         tiles: sparse tile map (used for per-tile entering costs).
         starts: candidate entry nodes.
         goals: candidate goal nodes; the search stops at the cheapest one.
+        terrain: optional dict mapping "x,y" to elevation in meters.
 
     Returns:
         The minimal accumulated cost, or ``None`` when no path exists.
@@ -121,8 +123,12 @@ def astar_path_cost(
             continue  # stale heap entry
         if node in goal_set:
             return g
+        node_elev = terrain.get(f"{node[0]},{node[1]}", 0.0) if terrain else 0.0
+
         for neighbor in adjacency[node]:
-            new_g = g + step_cost(tiles[neighbor])
+            neighbor_elev = terrain.get(f"{neighbor[0]},{neighbor[1]}", 0.0) if terrain else 0.0
+            slope_penalty = abs(neighbor_elev - node_elev) * config.SLOPE_PENALTY_WEIGHT
+            new_g = g + step_cost(tiles[neighbor]) + slope_penalty
             if new_g < best_known.get(neighbor, float("inf")):
                 best_known[neighbor] = new_g
                 heapq.heappush(

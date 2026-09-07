@@ -117,6 +117,13 @@ RESOURCE_RADIUS = 4
 TRAFFIC_DISCONNECT_PENALTY = 5.0
 
 # ---------------------------------------------------------------------------
+# Terrain scoring (PRD §1.3 Phase 8)
+# ---------------------------------------------------------------------------
+SLOPE_PENALTY_WEIGHT = 0.5
+SCENIC_VIEW_BONUS = 5.0
+ELEVATION_SCENIC_THRESHOLD = 5.0
+
+# ---------------------------------------------------------------------------
 # Local delta (PRD §11)
 # ---------------------------------------------------------------------------
 # Deterministic tie-break order when several metrics move by the same
