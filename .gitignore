@@ -8,3 +8,5 @@ frontend/dist/
 /package.json
 /package-lock.json
 .vscode/
+*/__pycache__/
+*/.venv/

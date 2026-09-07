@@ -492,47 +492,457 @@ All Phase 4 UI MUST:
 - The Phase 4 demo flow can be completed reliably.
 
 
-### Phase 5 — Optional 3D Visualization
+### Phase 5 — Day 2 / Freeform Spatial Placement
 
-Goal: increase demo impact without changing the simulation model.
+**Goal:** Remove the assumption that planning objects must be snapped to a grid. Preserve the sparse city model as the authoritative data layer, but allow real spatial placement.
 
-Deliver:
-- `.glb` / `.gltf` upload.
-- Supabase Storage integration.
-- Tile-level model references.
-- React Three Fiber 3D view.
-- Graceful fallback to 2D if a model fails.
-- Future-ready per-model transform metadata for rotation, scale, and position offsets.
-- Future-ready spatial placement that allows models to be independently oriented from the underlying tile.
+**Deliver:**
 
-3D MUST be optional and MUST NOT block the core planner or scoring workflow.
+- Freeform placement for zones at arbitrary world coordinates.
+- Zone rotation at any angle.
+- Zone footprint/size editing without requiring grid-aligned dimensions.
+- Visual placement preview before commit.
+- Move existing zones without deleting/recreating them.
+- Rotate existing zones after placement.
+- Collision/overlap feedback that is clear but does not unnecessarily prevent valid planning.
+- Selection, move, rotate, resize, and delete interactions.
+- Undo/redo for spatial edits.
+- Backward compatibility for existing sparse-grid data.
+- A clean distinction between:
+  - logical zone type;
+  - world position;
+  - footprint geometry;
+  - visual transform;
+  - simulation attributes.
 
-### Phase 6 — Polish, Hardening, and Demo Readiness
+**Important architectural rule:**
 
-Goal: turn the working system into a reliable hackathon demonstration.
+The grid remains useful as a coordinate/reference system and for compatibility, but it is no longer a restriction on where zones can exist. Do not force freeform objects back onto integer tile centers.
 
-Deliver:
-- UX polish.
-- Loading, empty, success, and error states.
-- Keyboard shortcuts where useful.
-- Accessibility checks.
-- Performance profiling.
-- Test coverage for core flows.
-- Demo seed city.
-- Clear demo narrative.
+A suitable conceptual model is:
+
+```typescript
+interface SpatialZone {
+  id: string;
+  type: ZoneType;
+  position: { x: number; y: number };
+  rotation: number;
+  footprint: {
+    width: number;
+    depth: number;
+  };
+  attributes: ZoneAttributes;
+}
+```
+
+**Exit criteria:**
+
+- A user can place a zone anywhere in the planning space.
+- A user can rotate a zone to any angle.
+- A user can select and transform an existing zone.
+- Existing Phase 1–4 functionality remains usable.
+- Spatial transforms are stored in city state rather than temporary UI state.
+- Scoring can consume spatial objects without depending on visual rendering.
+
+---
+
+### Phase 6 — Day 2 / Freeform Road Authoring
+
+**Goal:** Replace grid-only road placement with a real road-drawing workflow while retaining deterministic traffic semantics.
+
+**Deliver:**
+
+- Draw roads by clicking/dragging a path.
+- Multi-segment road geometry.
+- Straight and curved road segments.
+- Arbitrary orientation.
+- Adjustable road width.
+- Road endpoints and editable nodes.
+- Move/add/delete control points.
+- Split and merge compatible road segments where practical.
+- Road intersections generated from actual geometric intersections.
+- Road selection and modification after creation.
+- Preserve road subtype semantics:
+  - pedestrian path;
+  - local road;
+  - transit avenue;
+  - express highway.
+- Road subtype controls speed/capacity semantics; geometry does not become an arbitrary score bonus.
+- A deterministic conversion from freeform road geometry into the traffic graph.
+
+Conceptual model:
+
+```typescript
+interface RoadGeometry {
+  id: string;
+  type: RoadType;
+  points: Array<{ x: number; y: number }>;
+  width: number;
+  elevation: number;
+  attributes?: RoadAttributes;
+}
+```
+
+**Interaction flow:**
+
+```text
+Select Road Tool
+      ↓
+Click / Drag to Draw
+      ↓
+Preview Geometry
+      ↓
+Adjust Nodes / Width / Type
+      ↓
+Commit
+      ↓
+Rebuild A* Graph
+      ↓
+Recalculate Scores
+```
+
+**Exit criteria:**
+
+- A user can draw a road without snap-to-grid.
+- Roads can be diagonal, curved, and multi-segment.
+- Existing roads can be selected and modified.
+- Traffic/pathfinding uses road geometry deterministically.
+- The planner remains responsive during road editing.
+
+---
+
+### Phase 7 — Day 2 / Zone Attributes and Existing-Zone Editing
+
+**Goal:** Turn zones into editable planning entities rather than fixed colored tiles.
+
+**Deliver:**
+
+- Create zone attributes at placement time.
+- Edit attributes of newly created zones.
+- Edit attributes of imported or pre-existing zones.
+- Select an existing zone and open an inspector.
+- Update attributes without recreating the zone.
+- Support at minimum:
+
+```text
+Zone Type
+Name / Label
+Capacity or Density
+Height / Floors
+Footprint
+Rotation
+Development Intensity
+Optional Custom Model
+```
+
+- Attribute changes immediately update the simulation.
+- Attribute editing must work for both manually created and GIS-derived zones.
+- Reset/restore defaults where appropriate.
+- Unsaved modifications remain recoverable.
+
+Conceptual model:
+
+```typescript
+interface ZoneAttributes {
+  name?: string;
+  density?: number;
+  capacity?: number;
+  floors?: number;
+  height?: number;
+  developmentIntensity?: number;
+}
+```
+
+**UX requirement:**
+
+Do not open a large form by default. Selecting a zone should reveal a compact inspector or contextual panel near the selected object.
+
+**Exit criteria:**
+
+- Existing zones can be modified without deletion.
+- Attribute edits change simulation results.
+- Imported zones are editable using the same inspector.
+- State serialization preserves attributes.
+
+---
+
+### Phase 8 — Day 2 / Terrain and Elevation
+
+**Goal:** Introduce terrain as a first-class spatial layer that affects both visualization and simulation.
+
+**Deliver:**
+
+- Terrain editing mode.
+- Raise terrain locally.
+- Lower terrain locally.
+- Brush-based terrain editing.
+- Adjustable brush radius.
+- Adjustable edit strength.
+- Terrain preview before commit.
+- Persistent terrain elevation data.
+- Smooth/interpolate terrain changes where practical.
+- Display elevation or contour information when useful.
+- Terrain must influence scoring where specified by the simulation model.
+
+Conceptual model:
+
+```typescript
+interface TerrainCell {
+  x: number;
+  y: number;
+  elevation: number;
+}
+```
+
+For freeform spatial objects, use sampled/interpolated terrain elevation rather than forcing every object onto a single flat grid height.
+
+**Simulation requirements:**
+
+Terrain elevation can affect:
+
+- road traversal cost;
+- accessibility;
+- drainage or flood-related penalties if later introduced;
+- development suitability;
+- building placement constraints;
+- terrain-dependent livability/resource effects when explicitly defined.
+
+Do not invent arbitrary terrain penalties. Any scoring effect must be centralized in deterministic configuration/constants and covered by tests.
+
+**Exit criteria:**
+
+- Users can raise and lower terrain.
+- Terrain state persists.
+- Building and road placement can read terrain elevation.
+- Score calculations measurably respond to defined terrain effects.
+- Terrain editing does not corrupt existing city objects.
+
+---
+
+### Phase 9 — Day 2 / Multi-Level Infrastructure
+
+**Goal:** Allow infrastructure to exist above and below the surface so cities can model elevated roads, tunnels, and stacked transportation networks.
+
+**Deliver:**
+
+- Road elevation/level property.
+- Positive levels for elevated roads.
+- Zero level for surface roads.
+- Negative levels for underground/tunnel roads.
+- Vertical connectors/ramps where needed.
+- Level-aware road graph.
+- Same x/y coordinates may contain multiple valid road levels.
+- Visual separation of stacked infrastructure.
+- Clear selection and editing of road levels.
+- Deterministic pathfinding across level changes.
+
+Conceptual model:
+
+```typescript
+interface RoadGeometry {
+  id: string;
+  type: RoadType;
+  points: Array<{ x: number; y: number }>;
+  width: number;
+  elevation: number;
+  level: number;
+  attributes?: RoadAttributes;
+}
+```
+
+Traffic graph concept:
+
+```text
+Surface Road
+     │
+     │ Ramp / Connector
+     ↓
+Elevated Road
+     │
+     │ Connector
+     ↓
+Underground Road
+```
+
+**Rules:**
+
+- Roads at different levels must not automatically intersect.
+- A geometric crossing at different levels is not an intersection.
+- Vertical connectivity must be represented explicitly by ramps/connectors or equivalent graph edges.
+- Level is infrastructure state, not a direct score bonus.
+- Pathfinding must remain deterministic.
+
+**Exit criteria:**
+
+- Users can create above-ground and below-ground roads.
+- Stacked roads can cross without creating false intersections.
+- Valid ramps/connectors enable movement between levels.
+- Weighted A* understands the multi-level network.
+- Score calculations remain deterministic.
+
+---
+
+### Phase 10 — Day 2 / Professional Spatial Interaction and Planner Rework
+
+**Goal:** Make the planner itself feel like the MetroGrid introduction in `LandingPage.tsx`, while preserving the existing usability of the application.
+
+The planner MUST visually inherit the language already established by the landing-page introduction rather than introducing a separate dashboard-style design.
+
+The provided `LandingPage.tsx` establishes the following visual language:
+
+- "URBAN SYSTEMS" / numbered scene-style eyebrow labels.
+- Large editorial headlines with emphasized italic text.
+- Dark spatial canvas.
+- Thin technical frame lines.
+- Monospace metadata.
+- Compact status chrome such as `LIVE MODEL`.
+- Sparse city geometry.
+- Subtle grid.
+- Dark building masses.
+- Restrained green/blue analytical accents.
+- Small floating contextual overlays.
+- Compact navigation and actions.
+- Animated but controlled camera/spatial movement.
+- `anime.js`-based transitions.
+- Strong emphasis on the city model rather than dashboard cards.
+
+fileciteturn1file1L11-L19
+
+The planner should therefore look like the **working application version of the landing-page city model**, not like a generic admin dashboard.
+
+#### Planner visual target
+
+```text
+┌──────────────────────────────────────────────────────────────┐
+│ METROGRID                         LIVE MODEL        82 74 91 │
+│                                                              │
+│                                                              │
+│                    CITY / SPATIAL MODEL                      │
+│                                                              │
+│       ┌───────┐                      ┌──────────────┐        │
+│       │       │──────── ROAD ────────│              │        │
+│       │ZONE   │                      │    ZONE      │        │
+│       └───────┘                      └──────────────┘        │
+│                                                              │
+│                        +10 LIVABILITY                        │
+│                                                              │
+│──────────────────────────────────────────────────────────────│
+│  SELECT   ZONE   ROAD   TERRAIN   ANALYZE        3D         │
+└──────────────────────────────────────────────────────────────┘
+```
+
+#### App/planner requirements
+
+- Use the same visual vocabulary as `LandingPage.tsx`.
+- Reuse compatible typography, spacing, iconography, borders, status indicators, and motion principles.
+- Keep the city model visually dominant.
+- Treat the planner as a spatial workspace rather than a dashboard.
+- Use compact floating controls instead of large permanent cards.
+- Use technical metadata labels where useful, e.g.:
+  - `LIVE MODEL`
+  - `CITY / EAST DISTRICT`
+  - `ELEVATION`
+  - `NETWORK / ACTIVE`
+  - `SIMULATION / RUNNING`
+- Use small contextual inspectors for selected zones, roads, and terrain.
+- Maintain clear hierarchy without filling the screen with panels.
+- Use the existing landing-page dark spatial aesthetic as the primary reference.
+- The landing page and planner should feel like two views of one product.
+
+The planner MUST NOT simply copy the landing page's scroll narrative. It should convert its visual language into a functional workspace.
+
+#### Interaction language
+
+Use the landing-page interaction principles:
+
+```text
+Hover
+  ↓
+Subtle highlight
+
+Select
+  ↓
+Spatial outline + contextual information
+
+Place
+  ↓
+Preview + commit
+
+Change
+  ↓
+Immediate simulation response
+
+Score change
+  ↓
+Small animated delta
+
+Inspect
+  ↓
+Compact contextual panel
+```
+
+The city itself should remain the visual centerpiece.
+
+#### LandingPage-to-Planner consistency
+
+The following elements should be shared where practical:
+
+```text
+Theme tokens
+Typography
+Color tokens
+Icon style
+Border language
+Status indicators
+Motion timing
+Grid treatment
+Spatial overlays
+Metadata labels
+Button treatment
+```
+
+Do not duplicate visual constants across unrelated components.
+
+#### Exit criteria
+
+- Opening `/planner` feels like entering the city model shown on the introduction.
+- There is a clear visual relationship between `LandingPage.tsx` and the working planner.
+- The planner no longer looks like a generic dashboard or game UI.
+- New freeform, terrain, and multi-level tools fit the same visual language.
+- Existing core workflows remain understandable without reading documentation.
+- The UI remains responsive and accessible.
+
+---
 
 ### Progressive implementation rule
 
 At the end of every phase:
+
 1. Run the application.
 2. Run automated tests.
-3. Manually exercise the primary user flow.
-4. Fix regressions before starting the next phase.
-5. Keep the previous phase usable.
-6. Update documentation and decisions made.
-7. Commit a stable milestone before introducing the next major capability.
+3. Manually exercise the primary workflow.
+4. Verify no regression in previous capabilities.
+5. Commit a stable milestone.
+6. Update documentation and architecture notes.
+7. Only then begin the next phase.
 
-Do not implement later-phase scaffolding solely for appearance. Build a capability when its previous phase is working and provides a stable integration point.
+Day 2 features MUST be implemented in the order:
+
+```text
+Phase 5  → Freeform Zones
+   ↓
+Phase 6  → Freeform Roads
+   ↓
+Phase 7  → Zone Attributes
+   ↓
+Phase 8  → Terrain
+   ↓
+Phase 9  → Multi-Level Roads
+   ↓
+Phase 10 → Planner Visual Rework
+```
+
+The sequence may only be changed when a concrete technical dependency requires it. Cline must document that dependency before changing the order.
 
 ---
 
@@ -1235,7 +1645,16 @@ The Advanced Edition must use the sparse coordinate representation internally.
 
 ## 14.1 Placement
 
-The grid must support snap-to-grid placement.
+The original prototype may use snap-to-grid for simplicity, but Advanced/Day 2 spatial editing MUST NOT require snapping.
+
+Users must be able to:
+
+- place zones at arbitrary world coordinates;
+- rotate zones to arbitrary angles;
+- move and resize existing zones;
+- draw roads along arbitrary paths;
+- edit terrain continuously;
+- create infrastructure at multiple vertical levels.
 
 Mouse/touch coordinates must be converted using:
 
@@ -1246,11 +1665,14 @@ const x = event.clientX - rect.left;
 const y = event.clientY - rect.top;
 ```
 
-These pixel coordinates are then transformed into world/grid coordinates based on:
+These screen coordinates are then transformed into world coordinates using:
 
-- camera offset
-- zoom
-- tile size
+- camera offset;
+- zoom;
+- spatial transform;
+- terrain/elevation where relevant.
+
+The grid remains a reference/data-compatibility mechanism, not a placement restriction.
 
 ## 14.2 Placement Flow
 
@@ -1261,31 +1683,63 @@ Canvas Bounding Rect
     ↓
 Screen → World Coordinates
     ↓
-World → Integer Grid Coordinates
+Spatial Hit Test / Placement Preview
     ↓
-Update Sparse Map
+Commit Spatial Object
+    ↓
+Update Authoritative City State
     ↓
 POST /api/calculate
     ↓
 Receive Scores + Delta
     ↓
-Update Dashboard
+Update Spatial Analytics
     ↓
 Animate Local Feedback
+```
+
+For roads:
+
+```text
+Pointer Down
+    ↓
+Draw Path
+    ↓
+Preview Geometry
+    ↓
+Adjust Nodes / Width / Level
+    ↓
+Commit Road
+    ↓
+Rebuild Traffic Graph
+    ↓
+Recalculate Scores
 ```
 
 ## 14.3 Interaction States
 
 The UI should support at minimum:
 
-- Select tile type
-- Place tile
-- Erase tile
+- Select tool/object
+- Place zone
+- Move zone
+- Rotate zone
+- Resize zone
+- Edit zone attributes
+- Draw road
+- Edit road nodes
+- Change road width/type/level
+- Erase/delete object
+- Raise terrain
+- Lower terrain
+- Adjust terrain brush
 - Pan viewport
 - Zoom viewport
+- Undo/redo
 - Save layout
 - Load layout
 - GIS import
+- 2D / spatial view
 - Optional 3D model placement
 
 ---
@@ -1552,6 +2006,51 @@ Derived state may include:
 - transient feedback animations
 
 Do not store derived values redundantly when they can be calculated cheaply.
+
+---
+
+## 19.1 Spatial Data Model Extension
+
+Day 2 capabilities require the city state to support both legacy grid entities and richer spatial entities.
+
+The authoritative state SHOULD evolve toward:
+
+```typescript
+interface CityState {
+  zones: Map<string, SpatialZone>;
+  roads: Map<string, RoadGeometry>;
+  terrain: TerrainState;
+  legacyTiles?: Map<string, TileObject>;
+}
+```
+
+The exact implementation may differ, but responsibilities must remain separated.
+
+### Required principles
+
+- IDs, not array indexes, identify editable spatial objects.
+- Position, rotation, dimensions, attributes, and elevation are persistent state.
+- Rendering transforms are derived from state.
+- Simulation reads spatial state and does not depend on React component state.
+- Legacy grid data must remain importable.
+- Serialization must preserve all spatial attributes.
+- Freeform geometry must not silently be quantized back to the grid.
+- Multiple road levels may share the same x/y area.
+- Terrain elevation must be queryable by spatial objects and scoring logic.
+
+### Spatial queries
+
+The implementation SHOULD centralize reusable queries such as:
+
+```text
+findObjectsNear(position)
+findZonesIntersecting(bounds)
+findRoadsIntersecting(segment)
+getTerrainElevation(position)
+getRoadLevelAt(position)
+```
+
+Do not duplicate spatial calculations in individual UI components.
 
 ---
 
@@ -1837,6 +2336,15 @@ AI agents implementing MetroGrid must follow these rules.
 - MUST respect `prefers-reduced-motion`.
 - MUST avoid unnecessary dependencies, duplicate component systems, and speculative architecture.
 - MUST run the app, automated tests, and the primary manual flow before declaring Phase 4 complete.
+- MUST inspect the existing `LandingPage.tsx` implementation before Phase 10 and use it as the visual reference for the planner.
+- MUST preserve the LandingPage visual language in the working app: spatial dark canvas, technical metadata, restrained accents, compact chrome, and editorial hierarchy.
+- MUST remove snap-to-grid as a hard placement constraint during Day 2 spatial phases.
+- MUST model position, rotation, footprint, road geometry, terrain elevation, and infrastructure level as persistent state where applicable.
+- MUST support editing of existing/imported zones rather than only creating new ones.
+- MUST ensure freeform road geometry is converted deterministically into the traffic graph.
+- MUST ensure stacked roads at different levels do not create false intersections.
+- MUST test terrain and level-dependent scoring/pathfinding changes with deterministic fixtures.
+- MUST keep spatial editing responsive and avoid full-scene React re-renders when only one object changes.
 
 - Follow the API contracts exactly.
 - Use TypeScript on the frontend.
@@ -1925,12 +2433,33 @@ MetroGrid MUST be considered complete relative to the phase being implemented, n
 - [ ] Future independently oriented building models have a clean transform extension point.
 - [ ] No unnecessary dependency or competing UI framework has been introduced.
 
+### Day 2 spatial milestone
+
+- [ ] Zones can be placed at arbitrary world positions.
+- [ ] Zones can be rotated to arbitrary angles.
+- [ ] Zones can be moved and resized after creation.
+- [ ] Existing and imported zones expose editable attributes.
+- [ ] Freeform roads can be drawn without snap-to-grid.
+- [ ] Roads support multi-segment geometry.
+- [ ] Road width and subtype can be edited after creation.
+- [ ] Terrain can be raised and lowered.
+- [ ] Terrain state persists.
+- [ ] Defined terrain effects alter scores deterministically.
+- [ ] Roads support positive, zero, and negative vertical levels.
+- [ ] Different road levels do not create false intersections.
+- [ ] Explicit connectors can join levels for pathfinding.
+- [ ] Undo/redo protects spatial editing workflows.
+- [ ] The working planner visually matches the design language of `LandingPage.tsx`.
+- [ ] Planner UI uses compact spatial overlays rather than dashboard-heavy cards.
+- [ ] Previous phases remain functional after Day 2 changes.
+- [ ] Regression tests cover spatial transforms, geometry, terrain, and level-aware pathfinding.
+
 ### Advanced milestone
 The original full checklist below applies only after the prototype milestone is stable. Each item should be delivered as a separate, testable extension.
 
 # 30. Future Extensions
 
-These are explicitly out of the initial 48-hour scope unless time permits:
+These remain explicitly out of the current core implementation unless time permits:
 
 - Multiplayer collaboration.
 - Real-time city synchronization.
@@ -1943,8 +2472,8 @@ These are explicitly out of the initial 48-hour scope unless time permits:
 - Economic simulation.
 - Weather/environment simulation.
 - AI-assisted city recommendations.
-- Advanced terrain/elevation.
 - Full GIS editing tools.
+- Photorealistic building interiors or cinematic rendering.
 
 These features must not be implemented at the expense of the core requirements.
 
@@ -2023,12 +2552,14 @@ When tradeoffs are required, Cline MUST prioritize in this order:
 2. Correct and deterministic simulation.
 3. Simple, readable architecture.
 4. Minimalistic, accessible UX.
-5. Automated tests and regression safety.
-6. Performance where it affects the current phase.
-7. Persistence.
-8. GIS.
-9. 3D.
-10. Nice-to-have polish.
+5. Freeform spatial editing.
+6. Automated tests and regression safety.
+7. Performance where it affects the current phase.
+8. Terrain and multi-level infrastructure.
+9. Persistence.
+10. GIS.
+11. 3D.
+12. Nice-to-have polish.
 
 A feature with a lower priority MUST NOT destabilize a higher-priority capability.
 
@@ -2039,12 +2570,17 @@ The first prototype MUST NOT require:
 - GIS ingestion.
 - Supabase persistence.
 - 3D model uploads.
+- Freeform road geometry.
+- Terrain editing.
+- Multi-level roads.
 - Infinite-world UX.
 - Multiplayer.
 - Authentication.
 - AI/LLM recommendations.
 - Complex animations beyond essential interaction feedback.
 - A large UI component framework solely for styling.
+
+Day 2 is the deliberate transition from grid-based prototyping into expressive spatial planning.
 
 The prototype should feel complete enough to demonstrate the product idea, while remaining small enough for Cline to understand, test, and extend safely.
 
@@ -2055,4 +2591,24 @@ The intended experience is:
 > "Click, place, see the consequence, and keep designing."
 
 Every added feature should reinforce this loop rather than compete with it.
+
+### Visual Product Target
+
+The working planner MUST feel like the functional continuation of the supplied `LandingPage.tsx` introduction.
+
+`LandingPage.tsx` uses a restrained spatial visual system with a dark city model, technical frame lines, compact metadata, subtle grid treatment, green/blue analytical accents, and editorial scene labels. fileciteturn1file1L43-L60 The planner should inherit that design language while replacing the narrative/scroll interaction with direct manipulation.
+
+The result should feel like:
+
+```text
+LANDING PAGE
+     ↓
+Introduction to the city model
+     ↓
+OPEN PLANNER
+     ↓
+The same visual world becomes interactive
+```
+
+The planner is therefore not a separate dashboard product and not a game-like city builder. It is the operational workspace for the same spatial model introduced on the landing page.
 
