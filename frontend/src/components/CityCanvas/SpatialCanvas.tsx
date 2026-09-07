@@ -17,6 +17,7 @@ import { getDefaultRoadWidth, rotateRoadAroundCenter } from "../../utils/freefor
 
 
 export type SpatialDrag =
+  | { kind: "terrain" }
   | { kind: "move"; zoneId: string; offset: { x: number; y: number } }
   | { kind: "rotate"; zoneId: string }
   | { kind: "resize"; zoneId: string; corner: number }
@@ -272,6 +273,15 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       if (dragRef.current) {
         const p = propsRef.current;
         const d = dragRef.current;
+        if (d.kind === "terrain") {
+          if (p.activeTool.startsWith("terrain_")) {
+            const mode = (p.terrainMode ?? p.activeTool.replace("terrain_", "")) as import("../../types/spatial").TerrainEditMode;
+            p.onEditTerrain?.({ x: world.x, y: world.y }, mode, p.terrainRadius ?? 2, p.terrainStrength ?? 1.0);
+          }
+          ghostRef.current = world;
+          redraw();
+          return;
+        }
         if (d.kind === "move") {
           p.onMove(d.zoneId, { x: world.x - d.offset.x, y: world.y - d.offset.y });
         } else if (d.kind === "rotate") {
@@ -298,8 +308,9 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         return;
       }
 
-      if (propsRef.current.freeformMode) {
+      if (propsRef.current.freeformMode || propsRef.current.activeTool.startsWith("terrain_")) {
         ghostRef.current = world;
+        redraw();
       }
     };
 
@@ -309,10 +320,12 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       if (!world) return;
       const p = propsRef.current;
 
-      // 0. If terrain tool active, apply terrain editing
+      // 0. If terrain tool active, apply terrain editing and start drag
       if (p.activeTool.startsWith("terrain_")) {
         const mode = (p.terrainMode ?? p.activeTool.replace("terrain_", "")) as import("../../types/spatial").TerrainEditMode;
         p.onEditTerrain?.({ x: world.x, y: world.y }, mode, p.terrainRadius ?? 2, p.terrainStrength ?? 1.0);
+        dragRef.current = { kind: "terrain" };
+        redraw();
         return;
       }
 
@@ -387,7 +400,9 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
 
     const onPointerUp = () => {
       if (dragRef.current) {
-        propsRef.current.commitZones();
+        if (dragRef.current.kind !== "terrain") {
+          propsRef.current.commitZones();
+        }
         dragRef.current = null;
       }
       redraw();
@@ -457,7 +472,9 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         top: 0,
         left: 0,
         pointerEvents:
-          props.freeformMode || props.activeTool === "select" ? "auto" : "none",
+          props.freeformMode || props.activeTool === "select" || props.activeTool.startsWith("terrain_")
+            ? "auto"
+            : "none",
         outline: "none",
         touchAction: "none",
       }}

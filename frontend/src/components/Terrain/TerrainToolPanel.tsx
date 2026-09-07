@@ -6,7 +6,7 @@
 import type { TerrainEditMode } from "../../types/spatial";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Mountain, ArrowDown, Waves, Sliders, Disc } from "lucide-react";
+import { Mountain, ArrowDown, Waves, Sliders, Disc, X } from "lucide-react";
 
 interface TerrainToolPanelProps {
   mode: TerrainEditMode;
@@ -25,6 +25,7 @@ export function TerrainToolPanel({
   onRadiusChange,
   strength,
   onStrengthChange,
+  onClose,
 }: TerrainToolPanelProps) {
   return (
     <div className="absolute top-16 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 rounded-xl border border-sky-500/40 bg-card/95 px-4 py-2.5 shadow-2xl backdrop-blur-md select-none mg-rise text-xs">
@@ -108,6 +109,23 @@ export function TerrainToolPanel({
       <Badge variant="success" className="font-mono text-[10px] uppercase font-bold">
         Live Slope & View Physics
       </Badge>
+
+      {onClose && (
+        <>
+          <div className="h-4 w-[1px] bg-border" />
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            onClick={onClose}
+            className="h-7 w-7 rounded-lg text-muted-foreground hover:bg-destructive/15 hover:text-destructive transition-colors"
+            title="Close terrain tool (Esc)"
+            aria-label="Close terrain tool"
+          >
+            <X className="size-3.5" />
+          </Button>
+        </>
+      )}
     </div>
   );
 }

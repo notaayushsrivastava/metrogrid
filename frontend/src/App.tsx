@@ -150,6 +150,18 @@ export default function App() {
       if (event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+      if (event.key === "Escape") {
+        if (state.tool.startsWith("terrain_") || state.tool !== "select") {
+          setTool("select");
+        }
+        if (state.selectedZoneId) {
+          planner.selectZone(null);
+        }
+        if (state.selectedRoadId) {
+          planner.selectRoad(null);
+        }
+        return;
+      }
       if ((event.key === "Delete" || event.key === "Backspace") && state.selectedZoneId) {
         planner.removeZone(state.selectedZoneId);
         return;
@@ -159,7 +171,7 @@ export default function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [setTool, state.selectedZoneId, planner]);
+  }, [setTool, state.selectedZoneId, state.selectedRoadId, state.tool, planner]);
 
   useEffect(() => {
     if (state.status === "offline") slideDown(bannerRef.current);
@@ -372,6 +384,7 @@ export default function App() {
                 onRadiusChange={setTerrainRadius}
                 strength={terrainStrength}
                 onStrengthChange={setTerrainStrength}
+                onClose={() => setTool("select")}
               />
             )}
 
@@ -387,6 +400,10 @@ export default function App() {
                   meshes={freeformMeshes}
                   roads={state.roads}
                   terrain={state.terrain}
+                  terrainMode={terrainMode}
+                  terrainRadius={terrainRadius}
+                  terrainStrength={terrainStrength}
+                  onEditTerrain={planner.editTerrain}
                   selectedMeshId={state.selectedZoneId}
                   selectedRoadId={state.selectedRoadId}
                   activeTool={state.tool}

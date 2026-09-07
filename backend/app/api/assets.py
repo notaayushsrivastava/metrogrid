@@ -29,7 +29,7 @@ def _client():
     """Return the Supabase client or raise 503 when storage is unconfigured."""
     url = os.environ.get("SUPABASE_URL", "").strip()
     key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    if not (url and key):
+    if not (url and key) or "your-project" in url or "your-service-role-key" in key:
         raise ApiError(
             http.HTTP_503_SERVICE_UNAVAILABLE,
             "Model storage is not configured. Set SUPABASE_URL + "

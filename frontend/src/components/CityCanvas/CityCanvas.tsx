@@ -533,7 +533,7 @@ export function CityCanvas({
       const cam = cameraRef.current;
       if (cam && viewportRef.current.width > 0) {
         const panStep = 16.0; // 16px per frame
-        const moveX = (keys["a"] ? panStep : 0) - (keys["d"] ? panStep : 0);
+        const moveX = (keys["d"] ? panStep : 0) - (keys["a"] ? panStep : 0);
         const moveY = (keys["w"] ? panStep : 0) - (keys["s"] ? panStep : 0);
 
         let nextCam = cam;

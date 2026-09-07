@@ -26,6 +26,10 @@ interface FreeformCanvas3DProps {
   meshes: FreeformZoneMesh[];
   roads?: SpatialRoad[];
   terrain?: Map<string, number>;
+  terrainMode?: import("../../types/spatial").TerrainEditMode;
+  terrainRadius?: number;
+  terrainStrength?: number;
+  onEditTerrain?: (center: { x: number; y: number }, mode: import("../../types/spatial").TerrainEditMode, radius: number, strength: number) => void;
   selectedMeshId: string | null;
   selectedRoadId?: string | null;
   activeTool: string;
@@ -119,8 +123,8 @@ function WASDCameraController({ orbitRef }: { orbitRef: React.RefObject<OrbitCon
     const moveVector = new THREE.Vector3();
     if (keys["w"]) moveVector.addScaledVector(forward, moveSpeed);
     if (keys["s"]) moveVector.addScaledVector(forward, -moveSpeed);
-    if (keys["d"]) moveVector.addScaledVector(right, moveSpeed);
-    if (keys["a"]) moveVector.addScaledVector(right, -moveSpeed);
+    if (keys["a"]) moveVector.addScaledVector(right, moveSpeed);
+    if (keys["d"]) moveVector.addScaledVector(right, -moveSpeed);
 
     const moveY = (keys["q"] ? moveSpeed : 0) - (keys["e"] ? moveSpeed : 0);
 
@@ -502,10 +506,113 @@ function SpatialRoad3DItem({
   );
 }
 
+/** 3D Terrain Grid Plane that physically displaces vertices and contours with elevation changes */
+function ElevatedTerrainGround({
+  terrain,
+  onClick,
+}: {
+  terrain?: Map<string, number>;
+  onClick: (e: { point: THREE.Vector3; stopPropagation: () => void; nativeEvent?: MouseEvent }) => void;
+}) {
+  const size = 500;
+  const segments = 125;
+
+  const geom = useMemo(() => {
+    const g = new THREE.PlaneGeometry(size, size, segments, segments);
+    g.rotateX(-Math.PI / 2);
+    return g;
+  }, [size, segments]);
+
+  const terrainEntries = useMemo(() => {
+    return terrain ? Array.from(terrain.entries()) : [];
+  }, [terrain]);
+
+  useEffect(() => {
+    if (!geom) return;
+    const pos = geom.attributes.position;
+    const count = pos.count;
+    for (let i = 0; i < count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i);
+      const gx = Math.round(vx);
+      const gz = Math.round(vz);
+      let elev = 0;
+      if (terrain && terrain.size > 0) {
+        const direct = terrain.get(`${gx},${gz}`);
+        if (direct !== undefined) {
+          elev = direct;
+        } else {
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dz = -1; dz <= 1; dz++) {
+              const val = terrain.get(`${gx + dx},${gz + dz}`);
+              if (val !== undefined && val > 0) {
+                const dist = Math.hypot(vx - (gx + dx), vz - (gz + dz));
+                if (dist < 1.4) {
+                  elev = Math.max(elev, val * (1 - dist / 1.4));
+                }
+              }
+            }
+          }
+        }
+      }
+      pos.setY(i, elev);
+    }
+    pos.needsUpdate = true;
+    geom.computeVertexNormals();
+  }, [geom, terrainEntries, terrain]);
+
+  return (
+    <group>
+      {/* 1. Solid Ground Mesh with realistic lighting that physically elevates */}
+      <mesh
+        geometry={geom}
+        position={[0, 0, 0]}
+        onClick={onClick}
+        receiveShadow
+      >
+        <meshStandardMaterial
+          color="#0f172a"
+          roughness={0.88}
+          metalness={0.12}
+          flatShading={false}
+        />
+      </mesh>
+
+      {/* 2. Elevated Wireframe Grid lines conforming to the raised terrain */}
+      <mesh
+        geometry={geom}
+        position={[0, 0.03, 0]}
+      >
+        <meshBasicMaterial
+          color="#38bdf8"
+          wireframe
+          transparent
+          opacity={0.18}
+        />
+      </mesh>
+
+      {/* Outer buffer plane */}
+      <mesh
+        rotation={[-Math.PI / 2, 0, 0]}
+        position={[0, -0.05, 0]}
+        onClick={onClick}
+        receiveShadow
+      >
+        <planeGeometry args={[1600, 1600]} />
+        <meshStandardMaterial color="#080e1a" roughness={0.95} />
+      </mesh>
+    </group>
+  );
+}
+
 export function FreeformCanvas3D({
   meshes,
   roads = [],
   terrain,
+  terrainMode,
+  terrainRadius,
+  terrainStrength,
+  onEditTerrain,
   selectedMeshId,
   selectedRoadId,
   activeTool,
@@ -522,13 +629,10 @@ export function FreeformCanvas3D({
   const [hideZones, setHideZones] = useState(false);
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Handle keyboard shortcuts for TransformControls mode & delete
+  // Handle keyboard shortcuts for delete (avoid conflicting with WASD/tool shortcuts)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) return;
-      if (e.key === "t" || e.key === "T") setTransformMode("translate");
-      if (e.key === "r" || e.key === "R") setTransformMode("rotate");
-      if (e.key === "s" || e.key === "S") setTransformMode("scale");
       if ((e.key === "Delete" || e.key === "Backspace") && selectedMeshId) {
         onRemoveMesh(selectedMeshId);
       }
@@ -549,13 +653,25 @@ export function FreeformCanvas3D({
       return;
     }
 
-    // Accessibility check: only add zone on a clean click, not camera orbit drag
+    // Accessibility check: only add zone / edit terrain on a clean click, not camera orbit drag
     if (pointerDownPosRef.current && e.nativeEvent) {
       const dist = Math.hypot(
         e.nativeEvent.clientX - pointerDownPosRef.current.x,
         e.nativeEvent.clientY - pointerDownPosRef.current.y
       );
       if (dist > 5) return; // User was dragging/orbiting the camera
+    }
+
+    // Terrain editing tool in 3D
+    if (activeTool.startsWith("terrain_")) {
+      const mode = (terrainMode ?? activeTool.replace("terrain_", "")) as import("../../types/spatial").TerrainEditMode;
+      onEditTerrain?.(
+        { x: e.point.x, y: e.point.z },
+        mode,
+        terrainRadius ?? 2,
+        terrainStrength ?? 1.0
+      );
+      return;
     }
 
     const typeMap: Record<string, number> = {
@@ -688,16 +804,11 @@ export function FreeformCanvas3D({
               />
               <gridHelper args={[600, 120, "#38bdf8", "#1e293b"]} position={[0, 0, 0]} />
 
-              {/* Ground Plane */}
-              <mesh
-                rotation={[-Math.PI / 2, 0, 0]}
-                position={[0, -0.01, 0]}
+              {/* Dynamically elevated terrain ground and contour grid */}
+              <ElevatedTerrainGround
+                terrain={terrain}
                 onClick={handleGroundClick}
-                receiveShadow
-              >
-                <planeGeometry args={[1200, 1200]} />
-                <meshStandardMaterial color="#0f172a" roughness={0.9} />
-              </mesh>
+              />
 
               {/* 3D Freeform Multi-segment Roads (Preserved & Animating Always) */}
               {roads.map((road) => (

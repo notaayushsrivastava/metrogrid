@@ -94,7 +94,6 @@ type CityAction =
   | { type: "LAYOUTS_LOADING" }
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
-  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; terrain?: Record<string, number> }
   | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; roads?: SpatialRoad[]; terrain?: Record<string, number> }
   | { type: "IMPORT_MERGED"; tiles: GridState; zones?: SpatialZone[]; roads?: SpatialRoad[] }
 
@@ -183,7 +182,7 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
     }
 
     case "CLEAR":
-      return { ...state, tiles: new Map(), feedbacks: [] };
+      return { ...state, tiles: new Map(), zones: [], roads: [], terrain: new Map(), feedbacks: [] };
 
     case "CALC_START":
       return { ...state, calculating: true, error: null };
@@ -227,11 +226,20 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
       for (const [key, tile] of Object.entries(action.grid)) {
         tiles.set(key, { type: tile.type as TileType });
       }
+      const terrain = new Map<string, number>();
+      if (action.terrain) {
+        for (const [k, v] of Object.entries(action.terrain)) {
+          if (v > 0) terrain.set(k, v);
+        }
+      }
       return {
         ...state,
         tiles,
         zones: action.zones ?? [],
+        roads: action.roads ?? [],
+        terrain,
         selectedZoneId: null,
+        selectedRoadId: null,
         feedbacks: [],
       };
     }
@@ -591,12 +599,24 @@ export function useCityPlanner(): CityPlanner {
       current.tiles.forEach((tile, key) => {
         tilesPayload[key] = { type: tile.type };
       });
-      // v2 wrapper when freeform zones exist (PRD Phase 5); legacy flat map
-      // otherwise — both shapes load on both backends.
-      const grid_state: Record<string, unknown> =
-        current.zones.length > 0
-          ? { version: 2, tiles: tilesPayload, zones: current.zones }
-          : tilesPayload;
+      const terrainPayload: Record<string, number> = {};
+      current.terrain.forEach((elev, key) => {
+        if (elev > 0) terrainPayload[key] = elev;
+      });
+      // v2 wrapper when freeform zones, roads, or terrain exist
+      const hasV2Data =
+        current.zones.length > 0 ||
+        current.roads.length > 0 ||
+        Object.keys(terrainPayload).length > 0;
+      const grid_state: Record<string, unknown> = hasV2Data
+        ? {
+            version: 2,
+            tiles: tilesPayload,
+            zones: current.zones,
+            roads: current.roads,
+            terrain: terrainPayload,
+          }
+        : tilesPayload;
       await saveLayout({ name, grid_state });
       dispatch({ type: "SAVED", name, at: Date.now() });
       await refreshLayouts();
@@ -606,7 +626,7 @@ export function useCityPlanner(): CityPlanner {
 
   const loadCity = useCallback(async (layoutId: string) => {
     const detail = await loadLayout(layoutId);
-    // Detect the v2 wrapper (tiles + zones) vs the legacy flat map.
+    // Detect the v2 wrapper (tiles + zones + roads + terrain) vs the legacy flat map.
     const raw = detail.grid_state as unknown;
     const isV2 =
       typeof raw === "object" &&
@@ -617,15 +637,28 @@ export function useCityPlanner(): CityPlanner {
       ? ((raw as { tiles: Record<string, { type: number }> }).tiles)
       : (detail.grid_state as Record<string, { type: number }>);
     const zones: SpatialZone[] = isV2
-      ? ((raw as { zones: SpatialZone[] }).zones ?? [])
+      ? ((raw as { zones?: SpatialZone[] }).zones ?? [])
       : [];
-    dispatch({ type: "LAYOUT_LOAD", grid, zones });
+    const roads: SpatialRoad[] = isV2
+      ? ((raw as { roads?: SpatialRoad[] }).roads ?? [])
+      : [];
+    const terrainObj: Record<string, number> = isV2
+      ? ((raw as { terrain?: Record<string, number> }).terrain ?? {})
+      : {};
+    dispatch({ type: "LAYOUT_LOAD", grid, zones, roads, terrain: terrainObj });
     dispatch({ type: "CITY_NAMED", name: detail.name });
     dispatch({ type: "SAVED", name: detail.name, at: Date.now() });
+    const terrainMap = new Map<string, number>();
+    for (const [k, v] of Object.entries(terrainObj)) {
+      if (v > 0) terrainMap.set(k, v);
+    }
     stateRef.current = {
       ...stateRef.current,
       zones,
+      roads,
+      terrain: terrainMap,
       selectedZoneId: null,
+      selectedRoadId: null,
     };
     void runCalculation(
       deriveTileMap(

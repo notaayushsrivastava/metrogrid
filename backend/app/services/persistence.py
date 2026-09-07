@@ -143,7 +143,11 @@ class LayoutStore:
 
     @property
     def storage(self) -> str:
-        return "supabase" if (self.url and self.key) else "memory"
+        if not (self.url and self.key):
+            return "memory"
+        if "your-project" in self.url or "your-service-role-key" in self.key:
+            return "memory"
+        return "supabase"
 
     @property
     def _db(self) -> Any:
