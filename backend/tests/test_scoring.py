@@ -193,3 +193,56 @@ class TestLocalDelta:
         action = LatestAction(x=5, y=5, type=config.GREEN)
         delta = compute_local_delta(tiles, action)
         assert delta == {"x": 5, "y": 5, "value": 0, "metric": "livability"}
+
+
+class TestFreeformAreaScoring:
+    def test_freeform_scoring_scales_livability_by_green_square_meterage(self):
+        from app.models.requests import Footprint, SpatialZonePayload
+
+        small_green = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2", type=config.GREEN, position={"x": 10, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+        ]
+        large_green = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2", type=config.GREEN, position={"x": 10, "y": 0}, footprint=Footprint(width=30, depth=30), area=900.0
+            ),
+        ]
+
+        scores_small = compute_scores({}, zones=small_green, is_freeform=True)
+        scores_large = compute_scores({}, zones=large_green, is_freeform=True)
+
+        assert scores_large["livability"] > scores_small["livability"]
+
+    def test_freeform_scoring_scales_resources_by_commercial_square_meterage(self):
+        from app.models.requests import Footprint, SpatialZonePayload
+
+        small_com = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2", type=config.COMMERCIAL, position={"x": 10, "y": 0}, footprint=Footprint(width=5, depth=5), area=25.0
+            ),
+        ]
+        large_com = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2", type=config.COMMERCIAL, position={"x": 10, "y": 0}, footprint=Footprint(width=20, depth=20), area=400.0
+            ),
+        ]
+
+        scores_small = compute_scores({}, zones=small_com, is_freeform=True)
+        scores_large = compute_scores({}, zones=large_com, is_freeform=True)
+
+        assert scores_large["resources"] >= scores_small["resources"]
+

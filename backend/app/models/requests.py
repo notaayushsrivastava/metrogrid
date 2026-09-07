@@ -110,6 +110,24 @@ class PrototypePlacement(BaseModel):
         return value
 
 
+class Footprint(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    width: float
+    depth: float
+
+
+class SpatialZonePayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    type: int
+    position: dict[str, float]
+    rotation: Optional[float] = 0.0
+    footprint: Footprint
+    area: Optional[float] = None
+
+
 class CalculateRequest(BaseModel):
     """Advanced Edition scoring request (PRD §12.1)."""
 
@@ -118,6 +136,8 @@ class CalculateRequest(BaseModel):
     active_bounds: Optional[Bounds] = None
     tiles: dict[str, TileObject] = Field(default_factory=dict)
     latest_action: Optional[LatestAction] = None
+    is_freeform: Optional[bool] = False
+    zones: Optional[list[SpatialZonePayload]] = None
 
 
 class PrototypeCalculateRequest(BaseModel):

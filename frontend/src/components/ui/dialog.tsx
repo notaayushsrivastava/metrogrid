@@ -16,12 +16,21 @@ function DialogTrigger(props: React.ComponentProps<typeof DialogPrimitive.Trigge
 function DialogContent({
   className,
   children,
+  onCloseAutoFocus,
   ...props
 }: React.ComponentProps<typeof DialogPrimitive.Content>) {
   return (
     <DialogPrimitive.Portal>
       <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-background/70 backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
       <DialogPrimitive.Content
+        onCloseAutoFocus={(event) => {
+          if (onCloseAutoFocus) {
+            onCloseAutoFocus(event);
+          } else {
+            // Prevent default focus restore crash if the trigger element unmounted
+            event.preventDefault();
+          }
+        }}
         className={cn(
           "fixed left-1/2 top-1/2 z-50 grid w-[min(92vw,26rem)] -translate-x-1/2 -translate-y-1/2 gap-4 overscroll-contain rounded-lg border border-border bg-popover p-5 shadow-2xl outline-none",
           "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",

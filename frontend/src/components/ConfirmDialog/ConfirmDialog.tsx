@@ -53,8 +53,10 @@ export function ConfirmDialog({
             variant="destructive"
             size="sm"
             onClick={() => {
-              onConfirm();
               onOpenChange(false);
+              setTimeout(() => {
+                onConfirm();
+              }, 0);
             }}
           >
             {confirmLabel}

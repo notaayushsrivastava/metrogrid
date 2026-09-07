@@ -52,12 +52,23 @@ export async function calculateScores(
   tiles: GridState,
   latestAction: LatestAction | null,
   activeBounds?: { min_x: number; max_x: number; min_y: number; max_y: number },
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  isFreeform?: boolean,
+  zones?: import("../types/spatial").SpatialZone[]
 ): Promise<CalculateResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   // Allow caller cancellation to compose with the timeout.
   signal?.addEventListener("abort", () => controller.abort(), { once: true });
+
+  const zonesPayload = zones?.map((z) => ({
+    id: z.id,
+    type: z.type,
+    position: z.position,
+    rotation: z.rotation,
+    footprint: z.footprint,
+    area: z.footprint.width * z.footprint.depth,
+  }));
 
   let response: Response;
   try {
@@ -68,6 +79,8 @@ export async function calculateScores(
         tiles: serializeTiles(tiles),
         latest_action: latestAction,
         active_bounds: activeBounds,
+        is_freeform: Boolean(isFreeform),
+        zones: zonesPayload,
       }),
       signal: controller.signal,
     });

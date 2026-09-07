@@ -107,8 +107,8 @@ def _sparse_from_advanced(req: CalculateRequest) -> dict[tuple[int, int], int]:
 
 def _parse_body(
     payload: object,
-) -> tuple[dict[tuple[int, int], int], LatestAction | None]:
-    """Validate the raw payload and produce (sparse tiles, latest action).
+) -> tuple[dict[tuple[int, int], int], LatestAction | None, list | None, bool]:
+    """Validate the raw payload and produce (sparse tiles, latest action, zones, is_freeform).
 
     Accepts both the Advanced Edition sparse contract and the prototype
     matrix contract on the same endpoint (PRD §13).
@@ -127,13 +127,18 @@ def _parse_body(
                     y=proto.latest_placement.y,
                     type=proto.latest_placement.type,
                 )
-            return tiles, action
+            return tiles, action, None, False
         advanced = CalculateRequest.model_validate(payload)
     except ValidationError as exc:
         # Surface Pydantic validation failures as 422 (PRD §20.2).
         raise ApiError(422, f"Validation failed: {exc.errors()}") from exc
 
-    return _sparse_from_advanced(advanced), advanced.latest_action
+    return (
+        _sparse_from_advanced(advanced),
+        advanced.latest_action,
+        advanced.zones,
+        bool(advanced.is_freeform),
+    )
 
 
 @app.post("/api/calculate", response_model=CalculateResponse)
@@ -144,9 +149,9 @@ async def calculate(request: Request) -> CalculateResponse:
     except Exception as exc:  # malformed JSON
         raise ApiError(400, "Request body must be valid JSON") from exc
 
-    tiles, action = _parse_body(payload)
+    tiles, action, zones, is_freeform = _parse_body(payload)
 
-    scores = compute_scores(tiles)
+    scores = compute_scores(tiles, zones=zones, is_freeform=is_freeform)
     delta = compute_local_delta(tiles, action)
 
     return CalculateResponse(

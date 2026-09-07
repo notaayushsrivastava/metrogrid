@@ -3,16 +3,98 @@
 from __future__ import annotations
 
 from app import config
-from app.models.requests import LatestAction
+from app.models.requests import LatestAction, SpatialZonePayload
 from app.services import resources, traffic
 from app.services.sparse import TileMap
 
 
-def compute_raw_scores(tiles: TileMap) -> dict[str, float]:
-    """Raw (unnormalized) metric values for a sparse tile map.
+BASELINE_TILE_AREA = 100.0  # Standard 10m x 10m tile base area in sq meters
 
-    Deterministic: identical tile maps always produce identical raw scores.
+
+def compute_freeform_raw_scores(
+    zones: list[SpatialZonePayload] | None, tiles: TileMap
+) -> dict[str, float]:
+    """Calculate raw scores for freeform requests scaled by total square meterage."""
+    res_area = 0.0
+    com_area = 0.0
+    green_area = 0.0
+    ind_area = 0.0
+
+    if zones:
+        for z in zones:
+            area = z.area if z.area is not None else (z.footprint.width * z.footprint.depth)
+            if z.type == config.RESIDENTIAL:
+                res_area += area
+            elif z.type == config.COMMERCIAL:
+                com_area += area
+            elif z.type == config.GREEN:
+                green_area += area
+            elif z.type == config.INDUSTRIAL:
+                ind_area += area
+    else:
+        # Infer area from tiles
+        for _coord, t_type in tiles.items():
+            if t_type == config.RESIDENTIAL:
+                res_area += BASELINE_TILE_AREA
+            elif t_type == config.COMMERCIAL:
+                com_area += BASELINE_TILE_AREA
+            elif t_type == config.GREEN:
+                green_area += BASELINE_TILE_AREA
+            elif t_type == config.INDUSTRIAL:
+                ind_area += BASELINE_TILE_AREA
+
+    # 1. Livability: scaled by green & industrial square meterage
+    green_factor = green_area / BASELINE_TILE_AREA
+    ind_factor = ind_area / BASELINE_TILE_AREA
+    livability = (
+        config.LIVABILITY_BASE
+        + config.GREEN_BONUS * green_factor
+        - config.INDUSTRIAL_PENALTY * ind_factor
+    )
+
+    # 2. Resources: scaled by commercial vs residential square meterage ratio
+    if res_area == 0:
+        res_score = config.RESOURCES_BASE
+    else:
+        served_ratio = min(1.0, com_area / (res_area * 0.5 + 1.0)) if com_area > 0 else 0.0
+        served_res_area = res_area * served_ratio
+        unmet_res_area = res_area - served_res_area
+        res_score = (
+            config.RESOURCES_BASE
+            + config.RESOURCE_BONUS * (served_res_area / BASELINE_TILE_AREA)
+            - config.RESOURCE_PENALTY * (unmet_res_area / BASELINE_TILE_AREA)
+        )
+
+    # 3. Traffic: scaled by connectivity ratio relative to residential square meterage
+    if res_area == 0:
+        traffic_score = config.TRAFFIC_BASE
+    else:
+        connected_ratio = 1.0 if com_area > 0 else 0.0
+        disconnected_res_area = res_area * (1.0 - connected_ratio)
+        traffic_score = (
+            config.TRAFFIC_BASE
+            - config.TRAFFIC_DISCONNECT_PENALTY * (disconnected_res_area / BASELINE_TILE_AREA)
+        )
+
+    return {
+        "livability": livability,
+        "resources": res_score,
+        "traffic": traffic_score,
+    }
+
+
+def compute_raw_scores(
+    tiles: TileMap,
+    zones: list[SpatialZonePayload] | None = None,
+    is_freeform: bool = False,
+) -> dict[str, float]:
+    """Raw (unnormalized) metric values for a sparse tile map or freeform request.
+
+    Deterministic: identical tile maps / freeform zones always produce identical raw scores.
     """
+    if is_freeform or zones is not None:
+        return compute_freeform_raw_scores(zones, tiles)
+
     green_pairs = resources.green_pair_count(tiles)
     industrial_pairs = resources.industrial_pair_count(tiles)
     served, total_residential = resources.resource_stats(tiles)
@@ -45,10 +127,15 @@ def normalize_score(raw: float) -> int:
     return int(clamped + 0.5)
 
 
-def compute_scores(tiles: TileMap) -> dict[str, int]:
+def compute_scores(
+    tiles: TileMap,
+    zones: list[SpatialZonePayload] | None = None,
+    is_freeform: bool = False,
+) -> dict[str, int]:
     """Normalized global scores, rounded and clamped to 0-100."""
     return {
-        metric: normalize_score(raw) for metric, raw in compute_raw_scores(tiles).items()
+        metric: normalize_score(raw)
+        for metric, raw in compute_raw_scores(tiles, zones=zones, is_freeform=is_freeform).items()
     }
 
 

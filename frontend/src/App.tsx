@@ -6,7 +6,7 @@
  * contextual sheet so the planner stays visible (PRD Phase 4).
  */
 
-import { useEffect, lazy, useRef, Suspense, useState } from "react";
+import { useEffect, lazy, useRef, Suspense, useState, useMemo } from "react";
 import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D, Undo2, Redo2 } from "lucide-react";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
@@ -46,11 +46,17 @@ const CityCanvas3D = lazy(() =>
     default: m.CityCanvas3D,
   }))
 );
+const FreeformCanvas3D = lazy(() =>
+  import("./components/FreeformCanvas3D/FreeformCanvas3D").then((m) => ({
+    default: m.FreeformCanvas3D,
+  }))
+);
 const GisImportPanel = lazy(() =>
   import("./components/GISImport/GisImportPanel").then((m) => ({
     default: m.GisImportPanel,
   }))
 );
+import { translateGridToFreeform, translateFreeformToZones } from "./utils/freeform";
 
 const KEY_TO_TOOL: Record<string, ToolId> = {
   v: "select",
@@ -92,6 +98,31 @@ export default function App() {
   const [armedUrl, setArmedUrl] = useState<string | null>(null);
   const [armedName, setArmedName] = useState<string | null>(null);
   const bannerRef = useRef<HTMLDivElement>(null);
+  const [isFreeformRoute, setIsFreeformRoute] = useState(
+    window.location.pathname === "/freeform"
+  );
+
+  const freeformMeshes = useMemo(() => {
+    return translateGridToFreeform(state.tiles, state.zones);
+  }, [state.tiles, state.zones]);
+
+  // Sync state freeformMode when route changes
+  useEffect(() => {
+    if (isFreeformRoute && !state.freeformMode) {
+      planner.setFreeform(true);
+    } else if (!isFreeformRoute && state.freeformMode) {
+      planner.setFreeform(false);
+    }
+  }, [isFreeformRoute, state.freeformMode, planner]);
+
+  // Handle browser popstate navigation
+  useEffect(() => {
+    const onPopState = () => {
+      setIsFreeformRoute(window.location.pathname === "/freeform");
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
 
   const armModel = planner.armModel;
 
@@ -144,6 +175,42 @@ export default function App() {
             </div>
           </div>
 
+          {/* Mode Switcher Route Nav */}
+          <div className="flex items-center rounded-lg border border-border bg-secondary/40 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => {
+                setIsFreeformRoute(false);
+                planner.setFreeform(false);
+                window.history.pushState(null, "", "/grid");
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                !isFreeformRoute
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Grid3x3 className="size-3.5" aria-hidden="true" />
+              <span>Grid Mode</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsFreeformRoute(true);
+                planner.setFreeform(true);
+                window.history.pushState(null, "", "/freeform");
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                isFreeformRoute
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Move3D className="size-3.5" aria-hidden="true" />
+              <span>Freeform 3D</span>
+            </button>
+          </div>
+
           <div
             className="ml-auto flex items-center gap-2"
             role="status"
@@ -188,21 +255,23 @@ export default function App() {
               </TooltipTrigger>
               <TooltipContent>Import a real area as editable tiles</TooltipContent>
             </Tooltip>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant={view3d ? "default" : "secondary"}
-                  size="icon"
-                  aria-pressed={view3d}
-                  aria-label={view3d ? "Switch to 2D view" : "Switch to 3D view"}
-                  title={view3d ? "2D view" : "3D view"}
-                  onClick={() => setView3d((v) => !v)}
-                >
-                  <Box className="size-4" aria-hidden="true" />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>{view3d ? "2D view" : "3D view"}</TooltipContent>
-            </Tooltip>
+            {!isFreeformRoute && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant={view3d ? "default" : "secondary"}
+                    size="icon"
+                    aria-pressed={view3d}
+                    aria-label={view3d ? "Switch to 2D view" : "Switch to 3D view"}
+                    title={view3d ? "2D view" : "3D view"}
+                    onClick={() => setView3d((v) => !v)}
+                  >
+                    <Box className="size-4" aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>{view3d ? "2D view" : "3D view"}</TooltipContent>
+              </Tooltip>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -305,9 +374,35 @@ export default function App() {
             </p>
           </aside>
 
-          {/* City canvas — 2D (default) or optional 3D (PRD Phase 5). */}
+          {/* City canvas — Freeform 3D route vs Grid 2D/3D route */}
           <main className="mg-backdrop relative min-w-0 flex-1">
-            {view3d ? (
+            {isFreeformRoute ? (
+              <Suspense
+                fallback={
+                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                    Loading Freeform 3D WebGL Canvas…
+                  </div>
+                }
+              >
+                <FreeformCanvas3D
+                  meshes={freeformMeshes}
+                  selectedMeshId={state.selectedZoneId}
+                  activeTool={state.tool}
+                  onSelectMesh={(id) => planner.selectZone(id)}
+                  onAddMesh={(mesh) => {
+                    const zones = translateFreeformToZones([mesh]);
+                    if (zones.length > 0) planner.addZone(zones[0]);
+                  }}
+                  onUpdateMesh={(mesh) => {
+                    const zones = translateFreeformToZones([mesh]);
+                    if (zones.length > 0) planner.resizeZone(zones[0]);
+                  }}
+                  onRemoveMesh={(id) => planner.removeZone(id)}
+                  onGestureStart={planner.beginSpatialGesture}
+                  onCommitGesture={planner.commitZones}
+                />
+              </Suspense>
+            ) : view3d ? (
               <Suspense
                 fallback={
                   <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
@@ -335,8 +430,6 @@ export default function App() {
                 freeformMode={state.freeformMode}
                 selectedZoneId={state.selectedZoneId}
                 onAddZone={(world) => {
-                  // Follow the active zone tool (Res/Com/Park/Ind); roads stay
-                  // grid-authored — freeform zones are the four zone types.
                   const type = ZONE_TOOL_TYPE[state.tool] ?? 1;
                   planner.addZone({
                     id: `z${Date.now()}`,

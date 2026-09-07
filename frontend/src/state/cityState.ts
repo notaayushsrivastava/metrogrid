@@ -396,7 +396,14 @@ export function useCityPlanner(): CityPlanner {
       const seq = ++requestSeq.current;
       dispatch({ type: "CALC_START" });
       try {
-        const response = await calculateScores(tiles, action, boundsRef.current ?? undefined);
+        const response = await calculateScores(
+          tiles,
+          action,
+          boundsRef.current ?? undefined,
+          undefined,
+          stateRef.current.freeformMode,
+          stateRef.current.zones
+        );
         if (seq !== requestSeq.current) return; // stale response
         dispatch({
           type: "CALC_OK",
