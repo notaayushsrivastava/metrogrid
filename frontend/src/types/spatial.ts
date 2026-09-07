@@ -135,4 +135,12 @@ export interface SpatialRoad {
   attributes?: RoadAttributes;
 }
 
+export interface TerrainCell {
+  x: number;
+  y: number;
+  elevation: number;
+}
+
+export type TerrainEditMode = "raise" | "lower" | "smooth";
+
 

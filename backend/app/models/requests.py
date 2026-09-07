@@ -10,7 +10,7 @@ Two request shapes are accepted on the same endpoint:
 
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -126,6 +126,23 @@ class SpatialZonePayload(BaseModel):
     rotation: Optional[float] = 0.0
     footprint: Footprint
     area: Optional[float] = None
+    attributes: Optional[dict[str, Any]] = None
+
+
+class SpatialRoadPoint(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    x: float
+    y: float
+
+
+class SpatialRoadPayload(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    type: int
+    points: list[SpatialRoadPoint]
+    width: float = 8.0
 
 
 class CalculateRequest(BaseModel):
@@ -138,6 +155,8 @@ class CalculateRequest(BaseModel):
     latest_action: Optional[LatestAction] = None
     is_freeform: Optional[bool] = False
     zones: Optional[list[SpatialZonePayload]] = None
+    roads: Optional[list[SpatialRoadPayload]] = None
+    terrain: Optional[dict[str, float]] = None
 
 
 class PrototypeCalculateRequest(BaseModel):

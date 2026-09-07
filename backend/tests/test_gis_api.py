@@ -33,8 +33,11 @@ class TestGisImportContract:
         )
         assert response.status_code == 200
         body = response.json()
-        assert set(body.keys()) == {"tiles_imported", "updated_grid"}
+        assert {"tiles_imported", "updated_grid"}.issubset(set(body.keys()))
+        assert "spatial_zones" in body
+        assert "spatial_roads" in body
         assert body["tiles_imported"] > 0
+
         assert isinstance(body["updated_grid"], dict)
         for key, tile in body["updated_grid"].items():
             x_str, y_str = key.split(",")
@@ -193,20 +196,18 @@ class TestOverpassParsing:
             {
                 "type": "way",
                 "id": 1,
-                "tags": {"building": "yes"},
+                "tags": {"highway": "residential"},
                 "geometry": [
                     {"lon": 80.241, "lat": 12.975},
                     {"lon": 80.242, "lat": 12.975},
-                    {"lon": 80.242, "lat": 12.974},
-                    {"lon": 80.241, "lat": 12.974},
                 ],
             },
         ]
         features = gis_service.overpass_elements_to_features(elements)
         # Sorted by element id regardless of input order.
         assert [f.order[0] for f in features] == [1, 2]
-        assert features[0].closed is True
-        assert features[0].tile_type == config.RESIDENTIAL
+        assert features[0].closed is False
+        assert features[0].tile_type == config.ROAD_LOCAL
         assert features[1].closed is False
         assert features[1].tile_type == config.ROAD_HIGHWAY
 

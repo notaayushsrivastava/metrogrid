@@ -8,6 +8,7 @@
 
 import type { GridState, TileObject } from "../types/city";
 import type { SpatialZone } from "../types/spatial";
+import { zoneCoveredCells } from "./spatial";
 
 /** Default tile scale: 1 grid cell = 10 meters × 10 meters in real-world space. */
 export const DEFAULT_TILE_METER_SIZE = 10.0;
@@ -63,9 +64,17 @@ export function translateGridToFreeform(
 ): FreeformZoneMesh[] {
   const result: FreeformZoneMesh[] = [];
 
-  // 1. Convert discrete grid building tiles (excluding road tiles) to 3D freeform meshes
+  const zoneCells = new Set<string>();
+  for (const zone of zones) {
+    for (const cell of zoneCoveredCells(zone)) {
+      zoneCells.add(`${cell.x},${cell.y}`);
+    }
+  }
+
+  // 1. Convert discrete grid building tiles (excluding road tiles and cells covered by spatial zones)
   tiles.forEach((tile: TileObject, key: string) => {
     if (isRoadTileType(tile.type)) return;
+    if (zoneCells.has(key)) return;
 
     const [gx, gy] = key.split(",").map(Number);
     if (Number.isNaN(gx) || Number.isNaN(gy)) return;

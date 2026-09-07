@@ -50,9 +50,11 @@ async def gis_import(payload: GisImportRequest) -> GisImportResponse:
         raise ApiError(502, "The map data source failed. Retry shortly.") from exc
 
     origin = (payload.grid_origin.x, payload.grid_origin.y)
-    tiles = rasterize_features(features, bounds, origin)
+    tiles, spatial_zones, spatial_roads = rasterize_features(features, bounds, origin)
 
     return GisImportResponse(
         tiles_imported=len(tiles),
         updated_grid=sparse_to_json(tiles),
+        spatial_zones=spatial_zones,
+        spatial_roads=spatial_roads,
     )

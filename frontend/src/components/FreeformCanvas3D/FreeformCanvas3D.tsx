@@ -25,6 +25,7 @@ import { TILE_META } from "../../config/tiles";
 interface FreeformCanvas3DProps {
   meshes: FreeformZoneMesh[];
   roads?: SpatialRoad[];
+  terrain?: Map<string, number>;
   selectedMeshId: string | null;
   selectedRoadId?: string | null;
   activeTool: string;
@@ -75,7 +76,7 @@ function isRoadMeshType(type: number): boolean {
   return type === 4 || type === 40 || type === 41 || type === 42 || type === 43;
 }
 
-/** WASD map panning + Q/E elevation controller for R3F 3D WebGL camera. */
+/** WASD map panning + Q/E elevation controller for R3F 3D WebGL camera (Camera POV relative). */
 function WASDCameraController({ orbitRef }: { orbitRef: React.RefObject<OrbitControlsImpl> }) {
   const keysPressed = useRef<Record<string, boolean>>({});
 
@@ -96,26 +97,41 @@ function WASDCameraController({ orbitRef }: { orbitRef: React.RefObject<OrbitCon
     };
   }, []);
 
-  useFrame((_, delta) => {
+  useFrame((state, delta) => {
     const keys = keysPressed.current;
+    const controls = orbitRef.current;
+    if (!controls) return;
+
     const moveSpeed = 45.0 * delta; // 45 meters/sec
-    const moveX = (keys["d"] ? moveSpeed : 0) - (keys["a"] ? moveSpeed : 0);
-    const moveZ = (keys["s"] ? moveSpeed : 0) - (keys["w"] ? moveSpeed : 0);
+    const camera = state.camera;
+
+    // Calculate camera forward vector projected onto ground plane (XZ)
+    const forward = new THREE.Vector3();
+    camera.getWorldDirection(forward);
+    forward.y = 0;
+    if (forward.lengthSq() > 0.0001) forward.normalize();
+
+    // Calculate camera right vector
+    const right = new THREE.Vector3();
+    right.crossVectors(forward, new THREE.Vector3(0, 1, 0)).negate();
+    if (right.lengthSq() > 0.0001) right.normalize();
+
+    const moveVector = new THREE.Vector3();
+    if (keys["w"]) moveVector.addScaledVector(forward, moveSpeed);
+    if (keys["s"]) moveVector.addScaledVector(forward, -moveSpeed);
+    if (keys["d"]) moveVector.addScaledVector(right, moveSpeed);
+    if (keys["a"]) moveVector.addScaledVector(right, -moveSpeed);
+
     const moveY = (keys["q"] ? moveSpeed : 0) - (keys["e"] ? moveSpeed : 0);
 
-    if (moveX !== 0 || moveZ !== 0 || moveY !== 0) {
-      const controls = orbitRef.current;
-      if (controls) {
-        controls.target.x += moveX;
-        controls.target.z += moveZ;
-        controls.target.y = Math.max(0, controls.target.y);
+    if (moveVector.lengthSq() > 0 || moveY !== 0) {
+      controls.target.add(moveVector);
+      controls.object.position.add(moveVector);
 
-        controls.object.position.x += moveX;
-        controls.object.position.z += moveZ;
+      if (moveY !== 0) {
         controls.object.position.y = Math.max(2.0, controls.object.position.y + moveY);
-
-        controls.update();
       }
+      controls.update();
     }
   });
 
@@ -222,6 +238,7 @@ function DetailedZoneLabel({
 
 interface ZoneMeshItemProps {
   mesh: FreeformZoneMesh;
+  terrain?: Map<string, number>;
   isSelected: boolean;
   onSelect: (id: string) => void;
   onUpdateMesh: (mesh: FreeformZoneMesh) => void;
@@ -232,6 +249,7 @@ interface ZoneMeshItemProps {
 
 function ZoneMeshItem({
   mesh,
+  terrain,
   isSelected,
   onSelect,
   onUpdateMesh,
@@ -245,12 +263,12 @@ function ZoneMeshItem({
 
   const isRoad = isRoadMeshType(mesh.type);
   const baseColor = isRoad ? (ZONE_COLOR[mesh.type] ?? "#334155") : (ZONE_COLOR[mesh.type] ?? "#94a3b8");
-  const customHeight = mesh.attributes?.height ?? (mesh.attributes?.floors ? mesh.attributes.floors * 3.0 : undefined);
+  const customHeight = mesh.type === 3 ? 0.15 : (mesh.attributes?.height ?? (mesh.attributes?.floors ? mesh.attributes.floors * 3.0 : undefined));
   const height = isRoad
     ? 0.08
     : customHeight ??
       (mesh.type === 3
-        ? 0.4
+        ? 0.15
         : mesh.type === 1
           ? 4.0
           : mesh.type === 2
@@ -259,14 +277,16 @@ function ZoneMeshItem({
               ? 5.0
               : 0.2);
 
+  const elev = terrain ? (terrain.get(`${Math.round(mesh.position.x)},${Math.round(mesh.position.z)}`) ?? 0) : 0;
+
   // Sync mesh transform on initial selection or external update when not dragging
   useEffect(() => {
     if (meshRef.current) {
-      meshRef.current.position.set(mesh.position.x, height / 2, mesh.position.z);
+      meshRef.current.position.set(mesh.position.x, elev + height / 2, mesh.position.z);
       meshRef.current.rotation.y = (mesh.rotation * Math.PI) / 180;
       meshRef.current.scale.set(1, 1, 1);
     }
-  }, [mesh.position.x, mesh.position.z, mesh.rotation, height]);
+  }, [mesh.position.x, mesh.position.z, mesh.rotation, height, elev]);
 
   const tcRef = useRef<any>(null);
 
@@ -433,10 +453,12 @@ function InstancedZoneGroup({
 
 function SpatialRoad3DItem({
   road,
+  terrain,
   isSelected,
   onSelect,
 }: {
   road: SpatialRoad;
+  terrain?: Map<string, number>;
   isSelected: boolean;
   onSelect?: (id: string) => void;
 }) {
@@ -455,9 +477,12 @@ function SpatialRoad3DItem({
         const midX = (pt1.x + pt2.x) / 2;
         const midZ = (pt1.y + pt2.y) / 2;
         const rotY = -Math.atan2(dz, dx);
+        const elev1 = terrain ? (terrain.get(`${Math.round(pt1.x)},${Math.round(pt1.y)}`) ?? 0) : 0;
+        const elev2 = terrain ? (terrain.get(`${Math.round(pt2.x)},${Math.round(pt2.y)}`) ?? 0) : 0;
+        const midY = (elev1 + elev2) / 2 + 0.04;
 
         return (
-          <group key={i} position={[midX, 0.04, midZ]} rotation={[0, rotY, 0]}>
+          <group key={i} position={[midX, midY, midZ]} rotation={[0, rotY, 0]}>
             <mesh receiveShadow castShadow>
               <boxGeometry args={[len, 0.08, road.width]} />
               <meshStandardMaterial
@@ -480,6 +505,7 @@ function SpatialRoad3DItem({
 export function FreeformCanvas3D({
   meshes,
   roads = [],
+  terrain,
   selectedMeshId,
   selectedRoadId,
   activeTool,
@@ -625,7 +651,7 @@ export function FreeformCanvas3D({
       </div>
 
       {hideZones && (
-        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-950/80 px-4 py-1 font-mono text-xs font-semibold text-amber-300 shadow-xl backdrop-blur-md">
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-950/80 px-4 py-1 font-mono text-xs font-semibold text-amber-300 shadow-xl backdrop-blur-md">
           <EyeOff className="size-3.5 animate-pulse" />
           <span>Zones Hidden • Street Layout & Traffic Flow View Active</span>
         </div>
@@ -678,6 +704,7 @@ export function FreeformCanvas3D({
                 <SpatialRoad3DItem
                   key={road.id}
                   road={road}
+                  terrain={terrain}
                   isSelected={road.id === selectedRoadId}
                   onSelect={onSelectRoad}
                 />
@@ -700,6 +727,7 @@ export function FreeformCanvas3D({
                     {selectedMeshId && (
                       <ZoneMeshItem
                         mesh={meshes.find((m) => m.id === selectedMeshId)!}
+                        terrain={terrain}
                         isSelected={true}
                         onSelect={onSelectMesh}
                         onUpdateMesh={onUpdateMesh}
@@ -719,6 +747,7 @@ export function FreeformCanvas3D({
                     <ZoneMeshItem
                       key={mesh.id}
                       mesh={mesh}
+                      terrain={terrain}
                       isSelected={mesh.id === selectedMeshId}
                       onSelect={onSelectMesh}
                       onUpdateMesh={onUpdateMesh}

@@ -55,7 +55,8 @@ export async function calculateScores(
   signal?: AbortSignal,
   isFreeform?: boolean,
   zones?: import("../types/spatial").SpatialZone[],
-  roads?: import("../types/spatial").SpatialRoad[]
+  roads?: import("../types/spatial").SpatialRoad[],
+  terrain?: Record<string, number>
 ): Promise<CalculateResponse> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
@@ -98,6 +99,7 @@ export async function calculateScores(
         is_freeform: Boolean(isFreeform),
         zones: zonesPayload,
         roads: roadsPayload,
+        terrain,
       }),
       signal: controller.signal,
     });

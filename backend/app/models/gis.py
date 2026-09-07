@@ -60,11 +60,35 @@ class GisImportRequest(BaseModel):
     grid_origin: GisGridOrigin
 
 
+class GisSpatialZone(BaseModel):
+    id: str
+    type: int
+    position: dict[str, float]
+    rotation: float
+    footprint: dict[str, float]
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+
+class GisSpatialRoadPoint(BaseModel):
+    x: float
+    y: float
+    z: float = 0.0
+
+
+class GisSpatialRoad(BaseModel):
+    id: str
+    type: int
+    points: list[GisSpatialRoadPoint]
+    width: float
+
+
 class GisImportResponse(BaseModel):
     """`POST /api/gis/import` response (PRD §12.2, exact contract)."""
 
     tiles_imported: int
     updated_grid: dict[str, dict[str, int]]
+    spatial_zones: list[GisSpatialZone] = Field(default_factory=list)
+    spatial_roads: list[GisSpatialRoad] = Field(default_factory=list)
 
 
 __all__ = [
@@ -72,4 +96,7 @@ __all__ = [
     "GisGridOrigin",
     "GisImportRequest",
     "GisImportResponse",
+    "GisSpatialZone",
+    "GisSpatialRoadPoint",
+    "GisSpatialRoad",
 ]

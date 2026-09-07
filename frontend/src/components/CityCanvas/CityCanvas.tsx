@@ -48,6 +48,11 @@ interface CityCanvasProps {
   /* Phase 5 (Day 2): freeform spatial overlay. Omit to disable freeform. */
   zones?: SpatialZone[];
   roads?: import("../../types/spatial").SpatialRoad[];
+  terrain?: Map<string, number>;
+  terrainMode?: import("../../types/spatial").TerrainEditMode;
+  terrainRadius?: number;
+  terrainStrength?: number;
+  onEditTerrain?: (center: { x: number; y: number }, mode: import("../../types/spatial").TerrainEditMode, radius: number, strength: number) => void;
   freeformMode?: boolean;
   selectedZoneId?: string | null;
   selectedRoadId?: string | null;
@@ -65,6 +70,7 @@ interface CityCanvasProps {
   onSelectRoad?: (id: string | null) => void;
   onUpdateRoad?: (road: import("../../types/spatial").SpatialRoad) => void;
   onRemoveRoad?: (id: string) => void;
+  activeTool?: string;
 }
 
 interface Viewport {
@@ -291,6 +297,11 @@ export function CityCanvas({
   onBoundsChange,
   zones,
   roads,
+  terrain,
+  terrainMode,
+  terrainRadius,
+  terrainStrength,
+  onEditTerrain,
   freeformMode,
   selectedZoneId,
   selectedRoadId,
@@ -306,6 +317,7 @@ export function CityCanvas({
   onSelectRoad,
   onUpdateRoad,
   onRemoveRoad,
+  activeTool,
 }: CityCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -320,8 +332,11 @@ export function CityCanvas({
     lastY: number;
     moved: boolean;
     placed: Set<string>;
-    mode: "pan" | "paint";
+    mode: "pan" | "paint" | "rect";
   } | null>(null);
+  const rectStartRef = useRef<GridPoint | null>(null);
+  const hoverRef = useRef<GridPoint | null>(hover);
+  hoverRef.current = hover;
   const spaceRef = useRef(false);
   const pinchRef = useRef<{ dist: number; camera: Camera } | null>(null);
   const viewportRef = useRef(viewport);
@@ -425,6 +440,30 @@ export function CityCanvas({
       }
     }
 
+    // Draw Ctrl+Drag Rectangle Selection Preview
+    const drag = dragRef.current;
+    if (drag && drag.mode === "rect" && rectStartRef.current && hoverRef.current) {
+      const p1 = rectStartRef.current;
+      const p2 = hoverRef.current;
+      const minX = Math.min(p1.x, p2.x);
+      const maxX = Math.max(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y);
+      const maxY = Math.max(p1.y, p2.y);
+
+      const cell = cellSize(cam);
+      const { px: rx, py: ry } = cellToScreenPx(cam, minX, minY);
+      const rectWidth = (maxX - minX + 1) * cell;
+      const rectHeight = (maxY - minY + 1) * cell;
+
+      ctx.fillStyle = "rgba(56, 189, 248, 0.25)";
+      ctx.fillRect(rx, ry, rectWidth, rectHeight);
+      ctx.strokeStyle = hoverColor || "#38bdf8";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(rx + 1, ry + 1, rectWidth - 2, rectHeight - 2);
+      ctx.setLineDash([]);
+    }
+
     if (hover && toolActiveRef.current) {
       const { px, py } = cellToScreenPx(cam, hover.x, hover.y);
       ctx.strokeStyle = hoverColor;
@@ -459,6 +498,67 @@ export function CityCanvas({
     if (!canvas || !cam) return null;
     const rect = canvas.getBoundingClientRect(); // PRD §14.1
     return screenToGrid(rect, clientX, clientY, cam);
+  }, []);
+
+  // WASD pan + Q/E zoom keyboard controller for 2D canvas
+  const keysPressed = useRef<Record<string, boolean>>({});
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) return;
+      const key = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "q", "e"].includes(key)) {
+        keysPressed.current[key] = true;
+      }
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      const key = e.key.toLowerCase();
+      if (["w", "a", "s", "d", "q", "e"].includes(key)) {
+        keysPressed.current[key] = false;
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  useEffect(() => {
+    let animFrame: number;
+    const updateNavigation = () => {
+      const keys = keysPressed.current;
+      const cam = cameraRef.current;
+      if (cam && viewportRef.current.width > 0) {
+        const panStep = 16.0; // 16px per frame
+        const moveX = (keys["a"] ? panStep : 0) - (keys["d"] ? panStep : 0);
+        const moveY = (keys["w"] ? panStep : 0) - (keys["s"] ? panStep : 0);
+
+        let nextCam = cam;
+        if (moveX !== 0 || moveY !== 0) {
+          nextCam = panBy(nextCam, moveX, moveY);
+        }
+
+        if (keys["q"]) {
+          const centerX = viewportRef.current.width / 2;
+          const centerY = viewportRef.current.height / 2;
+          nextCam = zoomAt(nextCam, centerX, centerY, 0.97);
+        } else if (keys["e"]) {
+          const centerX = viewportRef.current.width / 2;
+          const centerY = viewportRef.current.height / 2;
+          nextCam = zoomAt(nextCam, centerX, centerY, 1.03);
+        }
+
+        if (nextCam !== cam) {
+          setCamera(nextCam);
+        }
+      }
+      animFrame = requestAnimationFrame(updateNavigation);
+    };
+    animFrame = requestAnimationFrame(updateNavigation);
+    return () => cancelAnimationFrame(animFrame);
   }, []);
 
   // Space toggles temporary pan mode.
@@ -498,6 +598,23 @@ export function CityCanvas({
         onPointerDown={(e) => {
           if (!cameraRef.current) return;
           e.preventDefault();
+
+          if ((e.ctrlKey || e.metaKey) && toolActiveRef.current) {
+            const cell = pointerToGrid(e.clientX, e.clientY);
+            if (cell) {
+              dragRef.current = {
+                pointerId: e.pointerId,
+                lastX: e.clientX,
+                lastY: e.clientY,
+                moved: false,
+                placed: new Set(),
+                mode: "rect",
+              };
+              rectStartRef.current = cell;
+              return;
+            }
+          }
+
           const panIntent =
             e.button === 1 ||
             e.button === 2 ||
@@ -544,6 +661,12 @@ export function CityCanvas({
                 drag.placed.add(tileKey(cell.x, cell.y));
                 onPlace(cell.x, cell.y);
               }
+            } else if (drag.mode === "rect") {
+              const cell = pointerToGrid(e.clientX, e.clientY);
+              if (cell) {
+                setHover(cell);
+                onHoverChange?.(cell);
+              }
             }
             return;
           }
@@ -552,11 +675,31 @@ export function CityCanvas({
           onHoverChange?.(cell);
         }}
         onPointerUp={(e) => {
-          if (dragRef.current?.pointerId === e.pointerId) {
+          const drag = dragRef.current;
+          if (drag && drag.pointerId === e.pointerId) {
+            if (drag.mode === "rect" && rectStartRef.current) {
+              const start = rectStartRef.current;
+              const end = pointerToGrid(e.clientX, e.clientY) ?? hover;
+              if (end) {
+                const minX = Math.min(start.x, end.x);
+                const maxX = Math.max(start.x, end.x);
+                const minY = Math.min(start.y, end.y);
+                const maxY = Math.max(start.y, end.y);
+                for (let x = minX; x <= maxX; x++) {
+                  for (let y = minY; y <= maxY; y++) {
+                    onPlace(x, y);
+                  }
+                }
+              }
+            }
             dragRef.current = null;
+            rectStartRef.current = null;
           }
         }}
-        onPointerCancel={() => (dragRef.current = null)}
+        onPointerCancel={() => {
+          dragRef.current = null;
+          rectStartRef.current = null;
+        }}
         onPointerLeave={() => {
           setHover(null);
           onHoverChange?.(null);
@@ -609,8 +752,13 @@ export function CityCanvas({
           tiles={tiles}
           zones={zones ?? []}
           roads={roads ?? []}
+          terrain={terrain}
+          terrainMode={terrainMode}
+          terrainRadius={terrainRadius}
+          terrainStrength={terrainStrength}
+          onEditTerrain={onEditTerrain}
           freeformMode={freeformMode ?? false}
-          activeTool={toolActive ? hoverColor : "select"}
+          activeTool={activeTool ?? (toolActive ? hoverColor : "select")}
           selectedZoneId={selectedZoneId ?? null}
           selectedRoadId={selectedRoadId ?? null}
           onAdd={(world) => onAddZone?.(world)}

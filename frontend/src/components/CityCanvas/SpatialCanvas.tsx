@@ -27,6 +27,11 @@ interface SpatialCanvasProps {
   tiles: GridState;
   zones: SpatialZone[];
   roads?: SpatialRoad[];
+  terrain?: Map<string, number>;
+  terrainMode?: import("../../types/spatial").TerrainEditMode;
+  terrainRadius?: number;
+  terrainStrength?: number;
+  onEditTerrain?: (center: { x: number; y: number }, mode: import("../../types/spatial").TerrainEditMode, radius: number, strength: number) => void;
   freeformMode: boolean;
   activeTool: string;
   selectedZoneId: string | null;
@@ -115,6 +120,37 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     const to = (wx: number, wy: number) => cellToScreenPx(p.camera, wx, wy);
     const time = Date.now() / 1000;
 
+    // 0. Draw Terrain Contour & Shading Heatmap
+    if (p.terrain && p.terrain.size > 0) {
+      p.terrain.forEach((elev, key) => {
+        if (elev <= 0) return;
+        const [cx, cy] = key.split(",").map(Number);
+        const center = to(cx + 0.5, cy + 0.5);
+        const radius = (size / 2) * 1.2;
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(center.px, center.py, radius, 0, Math.PI * 2);
+        const alpha = Math.min(0.45, (elev / 25.0) * 0.4);
+        ctx.fillStyle = `rgba(56, 189, 248, ${alpha})`;
+        ctx.fill();
+
+        // Contour ring
+        ctx.lineWidth = 1;
+        ctx.strokeStyle = `rgba(56, 189, 248, ${Math.min(0.8, alpha + 0.2)})`;
+        ctx.stroke();
+
+        // Elevation text
+        if (size > 18) {
+          ctx.font = "9px monospace";
+          ctx.fillStyle = "#38bdf8";
+          ctx.textAlign = "center";
+          ctx.fillText(`${elev}m`, center.px, center.py + 3);
+        }
+        ctx.restore();
+      });
+    }
+
     // 1. Draw Freeform Roads
     const roads = p.roads ?? [];
     for (const road of roads) {
@@ -131,6 +167,22 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     // 2. Draw Active Road Creation Polyline Draft
     if (draftRoadPointsRef.current.length > 0) {
       drawRoadDraft(ctx, draftRoadPointsRef.current, ghostRef.current, to, size);
+    }
+
+    // 2.5 Draw Terrain Brush Preview Circle
+    if (p.activeTool.startsWith("terrain_") && ghostRef.current) {
+      const brushPx = to(ghostRef.current.x, ghostRef.current.y);
+      const rPx = (p.terrainRadius ?? 2) * size;
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(brushPx.px, brushPx.py, rPx, 0, Math.PI * 2);
+      ctx.strokeStyle = p.activeTool === "terrain_raise" ? "#38bdf8" : p.activeTool === "terrain_lower" ? "#f43f5e" : "#a855f7";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.stroke();
+      ctx.fillStyle = p.activeTool === "terrain_raise" ? "rgba(56, 189, 248, 0.15)" : p.activeTool === "terrain_lower" ? "rgba(244, 63, 94, 0.15)" : "rgba(168, 85, 247, 0.15)";
+      ctx.fill();
+      ctx.restore();
     }
 
     // 3. Draw Freeform Spatial Zones (hidden when hideZones is enabled)
@@ -256,6 +308,13 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       const world = worldFromEvent(ev);
       if (!world) return;
       const p = propsRef.current;
+
+      // 0. If terrain tool active, apply terrain editing
+      if (p.activeTool.startsWith("terrain_")) {
+        const mode = (p.terrainMode ?? p.activeTool.replace("terrain_", "")) as import("../../types/spatial").TerrainEditMode;
+        p.onEditTerrain?.({ x: world.x, y: world.y }, mode, p.terrainRadius ?? 2, p.terrainStrength ?? 1.0);
+        return;
+      }
 
       // 1. If road tool active, add vertex to draft road
       if (p.freeformMode && isRoadToolActive(p.activeTool)) {

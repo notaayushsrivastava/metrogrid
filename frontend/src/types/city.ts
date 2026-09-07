@@ -120,6 +120,9 @@ export type ToolId =
   | "road_local"
   | "road_transit"
   | "road_highway"
+  | "terrain_raise"
+  | "terrain_lower"
+  | "terrain_smooth"
   | "erase";
 
 /** Geographic bounding box for GIS import (PRD §7.2, §12.2). */

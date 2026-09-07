@@ -50,6 +50,8 @@ export interface CityState {
   zones: SpatialZone[];
   /** Freeform multi-segment roads (PRD Phase 6 — Day 2). */
   roads: SpatialRoad[];
+  /** Terrain elevation map keyed by "x,y" in meters (PRD Phase 8 — Day 2). */
+  terrain: Map<string, number>;
   /** When true the canvas places freeform zones instead of grid tiles. */
   freeformMode: boolean;
   /** Selected zone id (Select tool), enabling move/rotate/resize handles. */
@@ -92,8 +94,8 @@ type CityAction =
   | { type: "LAYOUTS_LOADING" }
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
-  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[] }
-  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; roads?: SpatialRoad[] }
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; terrain?: Record<string, number> }
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[]; roads?: SpatialRoad[]; terrain?: Record<string, number> }
   | { type: "IMPORT_MERGED"; tiles: GridState; zones?: SpatialZone[]; roads?: SpatialRoad[] }
 
   | { type: "SAVED"; name: string; at: number }
@@ -110,6 +112,7 @@ type CityAction =
   | { type: "ROAD_REMOVE"; id: string }
   | { type: "ROAD_UPDATE"; road: SpatialRoad }
   | { type: "SELECT_ROAD"; id: string | null }
+  | { type: "TERRAIN_SET"; terrain: Map<string, number> }
   | { type: "SPATIAL_SNAPSHOT"; zones: SpatialZone[] }
   | { type: "UNDO" }
   | { type: "REDO" };
@@ -118,6 +121,7 @@ export const initialState: CityState = {
   tiles: new Map(),
   zones: [],
   roads: [],
+  terrain: new Map(),
   freeformMode: false,
   selectedZoneId: null,
   selectedRoadId: null,
@@ -257,6 +261,9 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
 
     case "SELECT_ROAD":
       return { ...state, selectedRoadId: action.id };
+
+    case "TERRAIN_SET":
+      return { ...state, terrain: action.terrain };
 
     case "ROAD_ADD": {
       const roads = [...state.roads, action.road];
@@ -406,6 +413,13 @@ export interface CityPlanner {
     bounds: GisBounds,
     origin: GisGridOrigin
   ) => Promise<{ imported: number; added: number }>;
+  /* Phase 8 (Day 2) — terrain and elevation */
+  editTerrain: (
+    center: { x: number; y: number },
+    mode: import("../types/spatial").TerrainEditMode,
+    radius: number,
+    strength: number
+  ) => void;
 }
 
 const TOOL_TO_TILE: Partial<Record<ToolId, TileType>> = {
@@ -439,6 +453,10 @@ export function useCityPlanner(): CityPlanner {
       const seq = ++requestSeq.current;
       dispatch({ type: "CALC_START" });
       try {
+        const terrainObj: Record<string, number> = {};
+        stateRef.current.terrain.forEach((val, key) => {
+          if (val > 0) terrainObj[key] = val;
+        });
         const response = await calculateScores(
           tiles,
           action,
@@ -446,7 +464,8 @@ export function useCityPlanner(): CityPlanner {
           undefined,
           stateRef.current.freeformMode,
           stateRef.current.zones,
-          stateRef.current.roads
+          stateRef.current.roads,
+          Object.keys(terrainObj).length > 0 ? terrainObj : undefined
         );
         if (seq !== requestSeq.current) return; // stale response
         dispatch({
@@ -823,6 +842,62 @@ export function useCityPlanner(): CityPlanner {
     [recalcDerived]
   );
 
+  const editTerrain = useCallback(
+    (
+      center: { x: number; y: number },
+      mode: import("../types/spatial").TerrainEditMode,
+      radius: number,
+      strength: number
+    ) => {
+      const terrain = new Map(stateRef.current.terrain);
+      const minX = Math.floor(center.x - radius);
+      const maxX = Math.ceil(center.x + radius);
+      const minY = Math.floor(center.y - radius);
+      const maxY = Math.ceil(center.y + radius);
+
+      for (let cx = minX; cx <= maxX; cx++) {
+        for (let cy = minY; cy <= maxY; cy++) {
+          const dist = Math.hypot(cx - center.x, cy - center.y);
+          if (dist <= radius) {
+            const falloff = 1 - dist / (radius + 0.5);
+            const key = `${cx},${cy}`;
+            const currentElev = terrain.get(key) ?? 0;
+
+            if (mode === "raise") {
+              const next = Math.min(50, currentElev + strength * falloff);
+              terrain.set(key, Math.round(next * 10) / 10);
+            } else if (mode === "lower") {
+              const next = Math.max(0, currentElev - strength * falloff);
+              if (next <= 0.05) terrain.delete(key);
+              else terrain.set(key, Math.round(next * 10) / 10);
+            } else if (mode === "smooth") {
+              let sum = 0;
+              let count = 0;
+              for (const [dx, dy] of [
+                [-1, 0],
+                [1, 0],
+                [0, -1],
+                [0, 1],
+              ]) {
+                sum += terrain.get(`${cx + dx},${cy + dy}`) ?? 0;
+                count++;
+              }
+              const avg = sum / count;
+              const blended = currentElev + (avg - currentElev) * 0.4;
+              if (blended <= 0.05) terrain.delete(key);
+              else terrain.set(key, Math.round(blended * 10) / 10);
+            }
+          }
+        }
+      }
+
+      stateRef.current = { ...stateRef.current, terrain };
+      dispatch({ type: "TERRAIN_SET", terrain });
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
   return {
     state,
     setTool,
@@ -851,6 +926,7 @@ export function useCityPlanner(): CityPlanner {
     addRoad,
     removeRoad,
     updateRoad,
+    editTerrain,
   };
 }
 

@@ -7,10 +7,12 @@
 import { TOOLS, TOOL_GROUPS, type ToolMeta } from "../../config/tiles";
 import { TOOL_ICONS } from "../../config/icons";
 import type { ToolId } from "../../types/city";
+import { Plus } from "lucide-react";
 
 interface TilePaletteProps {
   activeTool: ToolId;
   onSelectTool: (tool: ToolId) => void;
+  onOpenCustomZoneModal?: () => void;
   /** `row` renders the horizontal mobile bar, `column` the desktop rail. */
   layout?: "row" | "column";
 }
@@ -73,7 +75,7 @@ function ToolRow({
   );
 }
 
-export function TilePalette({ activeTool, onSelectTool, layout = "column" }: TilePaletteProps) {
+export function TilePalette({ activeTool, onSelectTool, onOpenCustomZoneModal, layout = "column" }: TilePaletteProps) {
   if (layout === "row") {
     return (
       <div
@@ -111,6 +113,17 @@ export function TilePalette({ activeTool, onSelectTool, layout = "column" }: Til
               onSelect={onSelectTool}
             />
           ))}
+
+          {group.id === "zones" && onOpenCustomZoneModal && (
+            <button
+              type="button"
+              onClick={onOpenCustomZoneModal}
+              className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-primary/50 bg-primary/5 px-2.5 py-1.5 text-xs font-semibold text-primary hover:bg-primary/10 transition-colors"
+            >
+              <Plus className="size-3.5" />
+              <span>+ Add Custom Zone</span>
+            </button>
+          )}
         </section>
       ))}
     </div>

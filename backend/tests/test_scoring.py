@@ -244,5 +244,39 @@ class TestFreeformAreaScoring:
         scores_small = compute_scores({}, zones=small_com, is_freeform=True)
         scores_large = compute_scores({}, zones=large_com, is_freeform=True)
 
-        assert scores_large["resources"] >= scores_small["resources"]
+        assert scores_large["resources"] > scores_small["resources"]
 
+    def test_freeform_scoring_scales_by_zone_attributes(self):
+        from app.models.requests import Footprint, SpatialZonePayload
+
+        single_floor_green = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2",
+                type=config.GREEN,
+                position={"x": 10, "y": 0},
+                footprint=Footprint(width=10, depth=10),
+                area=100.0,
+                attributes={"floors": 1, "density": 1.0},
+            ),
+        ]
+        multi_floor_green = [
+            SpatialZonePayload(
+                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
+            ),
+            SpatialZonePayload(
+                id="z2",
+                type=config.GREEN,
+                position={"x": 10, "y": 0},
+                footprint=Footprint(width=10, depth=10),
+                area=100.0,
+                attributes={"floors": 10, "density": 2.0},
+            ),
+        ]
+
+        scores_base = compute_scores({}, zones=single_floor_green, is_freeform=True)
+        scores_multi = compute_scores({}, zones=multi_floor_green, is_freeform=True)
+
+        assert scores_multi["livability"] > scores_base["livability"]

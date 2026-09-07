@@ -108,15 +108,15 @@ export const TILE_META: Record<Exclude<TileType, 0>, TileMeta> = {
 export interface ToolMeta {
   id: ToolId;
   label: string;
-  /** Tile type placed by this tool; null for select/erase. */
+  /** Tile type placed by this tool; null for select/erase/terrain. */
   places: TileType | null;
   key: string;
   glyph: string;
   color: string;
   /** Lucide icon name for the tool button. */
   icon: string;
-  /** Sidebar section (wireframe: BUILD / ZONES / ROADS). */
-  group: "build" | "zones" | "roads";
+  /** Sidebar section (wireframe: BUILD / ZONES / ROADS / TERRAIN). */
+  group: "build" | "zones" | "roads" | "terrain";
 }
 
 export const TOOLS: ToolMeta[] = [
@@ -129,12 +129,16 @@ export const TOOLS: ToolMeta[] = [
   { id: "road_local", label: "Local", places: TILE.ROAD_LOCAL, key: "5", glyph: "=", color: "#8d96a5", icon: "minus", group: "roads" },
   { id: "road_transit", label: "Transit", places: TILE.ROAD_AVENUE, key: "6", glyph: "≡", color: "#62a8ff", icon: "train", group: "roads" },
   { id: "road_highway", label: "Highway", places: TILE.ROAD_HIGHWAY, key: "7", glyph: "≣", color: "#ffd166", icon: "rocket", group: "roads" },
+  { id: "terrain_raise", label: "Raise", places: null, key: "T", glyph: "▲", color: "#38bdf8", icon: "mountain", group: "terrain" },
+  { id: "terrain_lower", label: "Lower", places: null, key: "G", glyph: "▼", color: "#f43f5e", icon: "arrow-down", group: "terrain" },
+  { id: "terrain_smooth", label: "Smooth", places: null, key: "H", glyph: "≈", color: "#a855f7", icon: "waves", group: "terrain" },
 ];
 
 export const TOOL_GROUPS: { id: ToolMeta["group"]; label: string; marker: string }[] = [
   { id: "build", label: "Build", marker: "▣" },
   { id: "zones", label: "Zones", marker: "□" },
   { id: "roads", label: "Roads", marker: "═" },
+  { id: "terrain", label: "Terrain", marker: "▲" },
 ];
 
 export function toolById(id: ToolId): ToolMeta {

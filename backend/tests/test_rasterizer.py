@@ -86,35 +86,31 @@ class TestMetadataMapping:
         assert classify_feature({"highway": highway}) == (LAYER_ROAD, expected, False)
 
     @pytest.mark.parametrize(
-        "building,expected",
+        "building",
         [
-            ("apartments", 1),
-            ("house", 1),
-            ("retail", 2),
-            ("office", 2),
-            ("warehouse", 5),
-            ("totally_unknown", 1),  # unknown buildings fall back safely
+            "apartments",
+            "house",
+            "retail",
+            "office",
+            "warehouse",
+            "totally_unknown",
         ],
     )
-    def test_building_classes(self, building, expected):
-        assert classify_feature({"building": building}) == (
-            LAYER_BUILDING,
-            expected,
-            True,
-        )
+    def test_building_classes_return_none(self, building):
+        assert classify_feature({"building": building}) is None
 
     def test_building_no_is_not_a_feature(self):
         assert classify_feature({"building": "no"}) is None
 
-    def test_green_spaces(self):
-        assert classify_feature({"leisure": "park"}) == (LAYER_AREA, 3, True)
-        assert classify_feature({"natural": "wood"}) == (LAYER_AREA, 3, True)
-        assert classify_feature({"landuse": "grass"}) == (LAYER_AREA, 3, True)
+    def test_green_spaces_return_none(self):
+        assert classify_feature({"leisure": "park"}) is None
+        assert classify_feature({"natural": "wood"}) is None
+        assert classify_feature({"landuse": "grass"}) is None
 
-    def test_landuse_zones(self):
-        assert classify_feature({"landuse": "industrial"}) == (LAYER_AREA, 5, True)
-        assert classify_feature({"landuse": "retail"}) == (LAYER_AREA, 2, True)
-        assert classify_feature({"landuse": "residential"}) == (LAYER_AREA, 1, True)
+    def test_landuse_zones_return_none(self):
+        assert classify_feature({"landuse": "industrial"}) is None
+        assert classify_feature({"landuse": "retail"}) is None
+        assert classify_feature({"landuse": "residential"}) is None
 
     def test_unrelated_metadata_is_skipped(self):
         assert classify_feature({"amenity": "bench", "name": "x"}) is None
@@ -138,9 +134,11 @@ class TestRasterization:
             ),
             closed=True,
         )
-        tiles = rasterize_features([feature], BOUNDS, ORIGIN)
+        tiles, zones, roads = rasterize_features([feature], BOUNDS, ORIGIN)
         assert tiles
+        assert len(zones) == 0  # Building zones scrapped from map import
         assert all(t == 2 for t in tiles.values())
+
         # Everything stays inside the projected span.
         span_x, span_y = grid_span(BOUNDS)
         for (x, y) in tiles:
@@ -153,8 +151,10 @@ class TestRasterization:
             ((80.24, 12.98), (80.25, 12.98)),  # west → east straight road
             closed=False,
         )
-        tiles = rasterize_features([feature], BOUNDS, ORIGIN)
+        tiles, zones, roads = rasterize_features([feature], BOUNDS, ORIGIN)
         assert tiles
+        assert len(roads) == 1
+        assert roads[0].type == 41
         assert all(t == 41 for t in tiles.values())
         ys = {y for (_, y) in tiles}
         assert len(ys) == 1  # a straight road stays on one row
@@ -166,7 +166,7 @@ class TestRasterization:
             ((80.24, 12.98), (80.25, 12.98)),
             closed=False,
         )
-        tiles = rasterize_features([feature], BOUNDS, ORIGIN)
+        tiles, *_ = rasterize_features([feature], BOUNDS, ORIGIN)
         assert tiles
         ys = {y for (_, y) in tiles}
         assert len(ys) >= 2  # highway corridor is ≥ 2 cells wide
@@ -185,7 +185,7 @@ class TestRasterization:
             closed=False,
             order=(1, 0),
         )
-        tiles = rasterize_features([building, road], BOUNDS, ORIGIN)
+        tiles, *_ = rasterize_features([building, road], BOUNDS, ORIGIN)
         assert tiles
         # Roads paint last, so every cell on the road's row is road
         # regardless of the building underneath it.
@@ -231,6 +231,5 @@ class TestRasterization:
             )
             for i in range(5)
         ]
-        tiles = rasterize_features(features, BOUNDS, ORIGIN)
+        tiles, *_ = rasterize_features(features, BOUNDS, ORIGIN)
         assert len(tiles) <= 5
-

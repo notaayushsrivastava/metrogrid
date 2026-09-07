@@ -10,3 +10,4 @@ frontend/dist/
 .vscode/
 */__pycache__/
 */.venv/
+*.pyc

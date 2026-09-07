@@ -186,3 +186,34 @@ class TestIntegrationFlow:
         ).json()
         assert r5["global_scores"]["traffic"] < r4["global_scores"]["traffic"]
         assert r5["global_scores"]["traffic"] == 95
+
+    def test_freeform_roads_calculation(self):
+        payload = {
+            "is_freeform": True,
+            "zones": [
+                {
+                    "id": "z1",
+                    "type": 1,
+                    "position": {"x": 0.0, "y": 0.0},
+                    "footprint": {"width": 10.0, "depth": 10.0},
+                },
+                {
+                    "id": "z2",
+                    "type": 2,
+                    "position": {"x": 30.0, "y": 0.0},
+                    "footprint": {"width": 10.0, "depth": 10.0},
+                },
+            ],
+            "roads": [
+                {
+                    "id": "r1",
+                    "type": 41,
+                    "points": [{"x": 0.0, "y": 0.0}, {"x": 30.0, "y": 0.0}],
+                    "width": 8.0,
+                }
+            ],
+        }
+        response = client.post("/api/calculate", json=payload)
+        assert response.status_code == 200
+        scores = response.json()["global_scores"]
+        assert scores["traffic"] == 100

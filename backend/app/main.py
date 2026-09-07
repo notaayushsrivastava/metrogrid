@@ -1,11 +1,11 @@
-"""MetroGrid FastAPI application (PRD §4.2, §12, §20.2).
+"""MetroGrid FastAPI application (PRD Phase 0, Phase 1, Phase 5, Phase 6).
 
 Endpoints
 ---------
 * ``GET  /api/health``    — Phase 0 health check.
 * ``POST /api/calculate`` — deterministic scoring; accepts both the Advanced
-  Edition sparse contract (§12.1) and the prototype matrix contract (§13).
-* ``POST /api/gis/import`` — deterministic GIS bounding-box import (§7, §12.2).
+  Edition sparse contract and the prototype matrix contract.
+* ``POST /api/gis/import`` — deterministic GIS bounding-box import.
 
 The scoring engine itself lives in ``app.services`` and never touches HTTP.
 """
@@ -54,9 +54,6 @@ def _cors_origins() -> list[str]:
     return list(config.DEFAULT_CORS_ORIGINS)
 
 
-# Dev servers rarely keep the same port (Vite auto-increments when 5173 is
-# busy), so any localhost/127.0.0.1 origin is accepted in addition to the
-# explicit allow-list. Production origins come from METROGRID_CORS_ORIGINS.
 _CORS_ORIGIN_REGEX = r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 app.add_middleware(
@@ -74,10 +71,8 @@ app.add_middleware(
 async def _validation_error_handler(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    """FastAPI/Pydantic validation failures → 422 without stack traces."""
+    """FastAPI/Pydantic validation failures -> 422 without stack traces."""
     errors = exc.errors()
-    # Pydantic stores the raised exception object in ctx.error, which is not
-    # JSON-serializable; drop ctx so the detail is safe to return.
     for err in errors:
         err.pop("ctx", None)
     return JSONResponse(status_code=422, content={"detail": errors})
@@ -90,7 +85,7 @@ async def _api_error_handler(_request: Request, exc: ApiError) -> JSONResponse:
 
 @app.get("/api/health")
 async def health() -> dict[str, str]:
-    """Phase 0 health check (PRD §1.3)."""
+    """Phase 0 health check."""
     return {"status": "ok", "version": config.APP_VERSION}
 
 
@@ -107,11 +102,11 @@ def _sparse_from_advanced(req: CalculateRequest) -> dict[tuple[int, int], int]:
 
 def _parse_body(
     payload: object,
-) -> tuple[dict[tuple[int, int], int], LatestAction | None, list | None, bool]:
-    """Validate the raw payload and produce (sparse tiles, latest action, zones, is_freeform).
+) -> tuple[dict[tuple[int, int], int], LatestAction | None, list | None, list | None, bool, dict[str, float] | None]:
+    """Validate the raw payload and produce (sparse tiles, latest action, zones, roads, is_freeform, terrain).
 
     Accepts both the Advanced Edition sparse contract and the prototype
-    matrix contract on the same endpoint (PRD §13).
+    matrix contract on the same endpoint.
     """
     if not isinstance(payload, dict):
         raise ApiError(400, "Request body must be a JSON object")
@@ -127,31 +122,32 @@ def _parse_body(
                     y=proto.latest_placement.y,
                     type=proto.latest_placement.type,
                 )
-            return tiles, action, None, False
+            return tiles, action, None, None, False, None
         advanced = CalculateRequest.model_validate(payload)
     except ValidationError as exc:
-        # Surface Pydantic validation failures as 422 (PRD §20.2).
         raise ApiError(422, f"Validation failed: {exc.errors()}") from exc
 
     return (
         _sparse_from_advanced(advanced),
         advanced.latest_action,
         advanced.zones,
+        advanced.roads,
         bool(advanced.is_freeform),
+        advanced.terrain,
     )
 
 
 @app.post("/api/calculate", response_model=CalculateResponse)
 async def calculate(request: Request) -> CalculateResponse:
-    """Deterministic scoring endpoint (PRD §12.1)."""
+    """Deterministic scoring endpoint."""
     try:
         payload = await request.json()
-    except Exception as exc:  # malformed JSON
+    except Exception as exc:
         raise ApiError(400, "Request body must be valid JSON") from exc
 
-    tiles, action, zones, is_freeform = _parse_body(payload)
+    tiles, action, zones, roads, is_freeform, terrain = _parse_body(payload)
 
-    scores = compute_scores(tiles, zones=zones, is_freeform=is_freeform)
+    scores = compute_scores(tiles, zones=zones, roads=roads, is_freeform=is_freeform, terrain=terrain)
     delta = compute_local_delta(tiles, action)
 
     return CalculateResponse(

@@ -8,6 +8,9 @@ import {
   Rocket,
   Train,
   TreePine,
+  Mountain,
+  ArrowDown,
+  Waves,
   type LucideIcon,
 } from "lucide-react";
 
@@ -22,4 +25,7 @@ export const TOOL_ICONS: Record<string, LucideIcon> = {
   minus: Minus,
   train: Train,
   rocket: Rocket,
+  mountain: Mountain,
+  "arrow-down": ArrowDown,
+  waves: Waves,
 };

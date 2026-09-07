@@ -130,33 +130,13 @@ _CLASSIFY_LANDUSE = {"residential": 1, "industrial": 5, "retail": 2, "commercial
 def classify_feature(tags: dict[str, str]) -> tuple[int, int, bool] | None:
     """Map GIS/OSM metadata to ``(layer, tile_type, closed)`` (PRD §7.5).
 
-    Returns ``None`` for features MetroGrid does not represent. Roads are
-    checked first (a tagged way is a road even if it carries other metadata),
-    then buildings, then area land-use.
+    Returns ``None`` for non-road features as map import only loads road networks.
+    Roads are classified, buildings and landuse areas return None.
     """
     highway = tags.get("highway")
     if highway is not None:
         tile_type = _ROAD_CLASS_TO_TILE.get(str(highway), config.ROAD)
         return (LAYER_ROAD, tile_type, False)
-
-    building = tags.get("building")
-    if building is not None and building != "no":
-        tile_type = _BUILDING_TO_TILE.get(str(building), config.RESIDENTIAL)
-        return (LAYER_BUILDING, tile_type, True)
-
-    landuse = tags.get("landuse")
-    if landuse in _CLASSIFY_LANDUSE:
-        return (LAYER_AREA, _CLASSIFY_LANDUSE[str(landuse)], True)
-    if landuse in _GREEN_LANDUSE:
-        return (LAYER_AREA, config.GREEN, True)
-
-    leisure = tags.get("leisure")
-    if leisure in _GREEN_LEISURE:
-        return (LAYER_AREA, config.GREEN, True)
-
-    natural = tags.get("natural")
-    if natural in _GREEN_NATURAL:
-        return (LAYER_AREA, config.GREEN, True)
 
     return None
 
@@ -288,6 +268,106 @@ def _stroke_polyline(
                 _mark_cell(fx, fy + 1.0, span_x, span_y, out, tile_type)
 
 
+from app.models.gis import GisSpatialRoad, GisSpatialRoadPoint, GisSpatialZone
+
+
+def lonlat_to_meters(
+    lon: float,
+    lat: float,
+    bounds: GeoBounds,
+    origin: tuple[int, int],
+    span_x: int,
+    span_y: int,
+) -> tuple[float, float]:
+    """Convert (lon, lat) to world meter coordinates relative to origin."""
+    fx = (lon - bounds.west) / (bounds.east - bounds.west) if bounds.east != bounds.west else 0.0
+    fy = (bounds.north - lat) / (bounds.north - bounds.south) if bounds.north != bounds.south else 0.0
+    total_w_m = span_x * config.GIS_TILE_METERS
+    total_h_m = span_y * config.GIS_TILE_METERS
+    mx = origin[0] * config.GIS_TILE_METERS + fx * total_w_m
+    my = origin[1] * config.GIS_TILE_METERS + fy * total_h_m
+    return mx, my
+
+
+def _extract_spatial_zone(
+    zone_id: str,
+    tile_type: int,
+    meter_points: list[tuple[float, float]],
+) -> GisSpatialZone | None:
+    if len(meter_points) < 3:
+        return None
+
+    cx = sum(p[0] for p in meter_points) / len(meter_points)
+    cy = sum(p[1] for p in meter_points) / len(meter_points)
+
+    max_len_sq = -1.0
+    best_dx, best_dy = 1.0, 0.0
+    n = len(meter_points)
+    for i in range(n):
+        x1, y1 = meter_points[i]
+        x2, y2 = meter_points[(i + 1) % n]
+        dx = x2 - x1
+        dy = y2 - y1
+        len_sq = dx * dx + dy * dy
+        if len_sq > max_len_sq:
+            max_len_sq = len_sq
+            best_dx = dx
+            best_dy = dy
+
+    angle_rad = math.atan2(best_dy, best_dx)
+    rotation_deg = math.degrees(angle_rad) % 360.0
+
+    cos_a = math.cos(angle_rad)
+    sin_a = math.sin(angle_rad)
+
+    u_coords = [(x - cx) * cos_a + (y - cy) * sin_a for x, y in meter_points]
+    v_coords = [-(x - cx) * sin_a + (y - cy) * cos_a for x, y in meter_points]
+
+    w_m = max(u_coords) - min(u_coords)
+    d_m = max(v_coords) - min(v_coords)
+
+    pos_x = round(cx / config.GIS_TILE_METERS, 2)
+    pos_y = round(cy / config.GIS_TILE_METERS, 2)
+    w_cells = max(0.5, round(w_m / config.GIS_TILE_METERS, 2))
+    d_cells = max(0.5, round(d_m / config.GIS_TILE_METERS, 2))
+
+    return GisSpatialZone(
+        id=zone_id,
+        type=tile_type,
+        position={"x": pos_x, "y": pos_y},
+        rotation=round(rotation_deg, 1),
+        footprint={"width": w_cells, "depth": d_cells},
+    )
+
+
+_ROAD_WIDTH_MAP = {
+    40: 4.0,
+    41: 8.0,
+    42: 12.0,
+    43: 16.0,
+    4: 8.0,
+}
+
+
+def _extract_spatial_road(
+    road_id: str,
+    tile_type: int,
+    meter_points: list[tuple[float, float]],
+) -> GisSpatialRoad | None:
+    if len(meter_points) < 2:
+        return None
+
+    pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2)) for x, y in meter_points]
+    width = _ROAD_WIDTH_MAP.get(tile_type, 8.0)
+
+    return GisSpatialRoad(
+        id=road_id,
+        type=tile_type,
+        points=pts,
+        width=width,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Feature → sparse map (PRD §7.3-7.5)
 # ---------------------------------------------------------------------------
@@ -297,8 +377,8 @@ def rasterize_features(
     features: list[GeoFeature],
     bounds: GeoBounds,
     origin: tuple[int, int],
-) -> TileMap:
-    """Rasterize classified features into a sparse tile map.
+) -> tuple[TileMap, list[GisSpatialZone], list[GisSpatialRoad]]:
+    """Rasterize classified features into a sparse tile map and spatial zones/roads.
 
     Geometry is rasterized in span-relative coordinates and shifted onto the
     requested ``origin`` exactly once, so the result is identical for the
@@ -309,6 +389,11 @@ def rasterize_features(
     """
     span_x, span_y = grid_span(bounds)
     rel: dict[tuple[int, int], int] = {}
+    spatial_zones: list[GisSpatialZone] = []
+    spatial_roads: list[GisSpatialRoad] = []
+
+    zone_idx = 0
+    road_idx = 0
 
     for feature in sorted(features, key=lambda f: (f.layer, f.order)):
         cells = [
@@ -325,11 +410,24 @@ def rasterize_features(
                 cells, span_x, span_y, rel, feature.tile_type, thickness
             )
 
+        meter_pts = [
+            lonlat_to_meters(lon, lat, bounds, origin, span_x, span_y)
+            for lon, lat in feature.points
+        ]
+        if feature.layer == LAYER_ROAD and not feature.closed:
+            road_idx += 1
+            sr = _extract_spatial_road(f"gis-road-{road_idx}", feature.tile_type, meter_pts)
+            if sr:
+                spatial_roads.append(sr)
+
     shifted = {
         (origin[0] + cx, origin[1] + cy): tile_type
         for (cx, cy), tile_type in rel.items()
     }
-    return dict(sorted(shifted.items())[: config.MAX_IMPORTED_TILES])
+    tiles = dict(sorted(shifted.items())[: config.MAX_IMPORTED_TILES])
+    return tiles, [], spatial_roads
+
+
 
 
 __all__ = [
@@ -341,8 +439,6 @@ __all__ = [
     "classify_feature",
     "grid_span",
     "lonlat_to_grid",
+    "lonlat_to_meters",
     "rasterize_features",
 ]
-
-
-
