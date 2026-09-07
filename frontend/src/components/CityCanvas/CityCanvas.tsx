@@ -11,9 +11,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Compass, Download } from "lucide-react";
 import { BASE_TILE, DEFAULT_VIEW_SPAN, TILE_META } from "../../config/tiles";
 import { tileKey } from "../../state/cityState";
-import type { Feedback, GridState, TileType } from "../../types/city";
+import type { Feedback, GridState, GlobalScores, TileType } from "../../types/city";
 import cityEmptyUrl from "../../assets/city-empty.png";
 import {
   Tooltip,
@@ -35,9 +36,12 @@ import {
 import { buildChunkIndex, chunkKeysInBounds } from "../../utils/chunks";
 import type { SpatialZone } from "../../types/spatial";
 import { SpatialCanvas } from "./SpatialCanvas";
+import { exportArchitecturalBlueprint } from "../../utils/blueprintExport";
 
 interface CityCanvasProps {
   tiles: GridState;
+  cityName?: string | null;
+  scores?: GlobalScores | null;
   toolActive: boolean;
   /** Outline color for the hovered cell (tool-dependent non-color cue). */
   hoverColor: string;
@@ -254,7 +258,7 @@ function drawTileWithTraffic(
 }
 
 
-/** Draw grid lines across the full visible viewport (line in-fill for culling). */
+/** Draw architectural drafting grid lines across the full visible viewport. */
 function drawGrid(
   ctx: CanvasRenderingContext2D,
   camera: Camera,
@@ -267,28 +271,65 @@ function drawGrid(
   const fromY = Math.floor((0 - camera.offsetY) / size);
   const toY = Math.ceil((height - camera.offsetY) / size);
 
-  ctx.strokeStyle = "rgba(148, 163, 184, 0.14)";
+  // Minor drafting grid
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.08)";
   ctx.lineWidth = 1;
   ctx.beginPath();
-  const ix0 = Math.max(fromX, -1050000000);
-  const ix1 = Math.min(toX, 1050000000);
+  const ix0 = Math.max(fromX, -100000);
+  const ix1 = Math.min(toX, 100000);
   for (let x = ix0; x <= ix1; x++) {
     const gx = Math.round(camera.offsetX + x * size) + 0.5;
     ctx.moveTo(gx, 0);
     ctx.lineTo(gx, height);
   }
-  const iy0 = Math.max(fromY, -1050000000);
-  const iy1 = Math.min(toY, 1050000000);
+  const iy0 = Math.max(fromY, -100000);
+  const iy1 = Math.min(toY, 100000);
   for (let y = iy0; y <= iy1; y++) {
     const gy = Math.round(camera.offsetY + y * size) + 0.5;
     ctx.moveTo(0, gy);
     ctx.lineTo(width, gy);
   }
   ctx.stroke();
+
+  // Major 5x5 architectural drafting grid
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.2)";
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  for (let x = Math.floor(ix0 / 5) * 5; x <= ix1; x += 5) {
+    const gx = Math.round(camera.offsetX + x * size) + 0.5;
+    ctx.moveTo(gx, 0);
+    ctx.lineTo(gx, height);
+  }
+  for (let y = Math.floor(iy0 / 5) * 5; y <= iy1; y += 5) {
+    const gy = Math.round(camera.offsetY + y * size) + 0.5;
+    ctx.moveTo(0, gy);
+    ctx.lineTo(width, gy);
+  }
+  ctx.stroke();
+
+  // Intersection '+' marks on major grid
+  if (size > 10) {
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.45)";
+    ctx.lineWidth = 1.2;
+    for (let x = Math.floor(ix0 / 5) * 5; x <= ix1; x += 5) {
+      const gx = Math.round(camera.offsetX + x * size) + 0.5;
+      for (let y = Math.floor(iy0 / 5) * 5; y <= iy1; y += 5) {
+        const gy = Math.round(camera.offsetY + y * size) + 0.5;
+        ctx.beginPath();
+        ctx.moveTo(gx - 3, gy);
+        ctx.lineTo(gx + 3, gy);
+        ctx.moveTo(gx, gy - 3);
+        ctx.lineTo(gx, gy + 3);
+        ctx.stroke();
+      }
+    }
+  }
 }
 
 export function CityCanvas({
   tiles,
+  cityName,
+  scores,
   toolActive,
   hoverColor,
   feedbacks,
@@ -347,6 +388,17 @@ export function CityCanvas({
   cameraRef.current = camera;
   const onBoundsRef = useRef(onBoundsChange);
   onBoundsRef.current = onBoundsChange;
+
+  const handleDownloadBlueprint = useCallback(() => {
+    exportArchitecturalBlueprint({
+      cityName: cityName || "MetroGrid Master Plan",
+      tiles,
+      zones,
+      roads,
+      terrain,
+      scores,
+    });
+  }, [cityName, tiles, zones, roads, terrain, scores]);
 
   // Track container size for a responsive canvas.
   useEffect(() => {
@@ -863,6 +915,98 @@ export function CityCanvas({
           {hover.x}, {hover.y}
         </div>
       )}
+
+      {/* Architectural Blueprint Frame & Title Block (Plan Preview Mode) */}
+      <div className="pointer-events-none absolute inset-0 z-10 p-3 sm:p-4 flex flex-col justify-between select-none">
+        {/* Top Row: Compass Rose & Alphanumeric Coordinates */}
+        <div className="flex items-start justify-between">
+          {/* North Arrow Compass Rose */}
+          <div className="pointer-events-auto flex items-center gap-2 rounded-lg border border-sky-500/40 bg-slate-950/85 px-3 py-1.5 font-mono text-xs text-sky-400 shadow-xl backdrop-blur">
+            <Compass className="size-4 text-sky-400 animate-spin-slow" />
+            <div className="flex flex-col leading-tight">
+              <span className="font-bold tracking-widest text-[10px] text-sky-300">NORTH ▲</span>
+              <span className="text-[8px] text-slate-400">PLAN PROJECTION</span>
+            </div>
+          </div>
+
+          {/* Blueprint Download Button (Floating Top Action) */}
+          <div className="pointer-events-auto flex items-center gap-2 mr-16">
+            <button
+              type="button"
+              onClick={handleDownloadBlueprint}
+              className="flex items-center gap-2 rounded-lg border border-sky-400/60 bg-sky-950/90 hover:bg-sky-900 text-sky-200 px-3.5 py-1.5 font-mono text-xs font-bold shadow-2xl backdrop-blur transition-all active:scale-95"
+              title="Download high-resolution architectural blueprint schematic as PNG"
+            >
+              <Download className="size-3.5 text-sky-400" />
+              <span>Download Blueprint (PNG)</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Bottom Row: Metric Scale Bar & Architectural Title Block */}
+        <div className="flex items-end justify-between gap-4">
+          {/* Metric Graphic Scale Bar */}
+          <div className="pointer-events-auto flex flex-col gap-1 rounded-lg border border-sky-500/30 bg-slate-950/85 px-3 py-1.5 font-mono text-[10px] text-sky-400 shadow-lg backdrop-blur">
+            <span className="font-bold text-[8px] text-slate-400 tracking-wider">METRIC SCALE • 1:500</span>
+            <div className="flex items-center border border-sky-500/50">
+              <div className="h-1.5 w-6 bg-sky-400" />
+              <div className="h-1.5 w-6 bg-slate-900" />
+              <div className="h-1.5 w-6 bg-sky-400" />
+              <div className="h-1.5 w-6 bg-slate-900" />
+            </div>
+            <div className="flex justify-between text-[7px] text-slate-300 font-bold">
+              <span>0m</span>
+              <span>25m</span>
+              <span>50m</span>
+              <span>100m</span>
+            </div>
+          </div>
+
+          {/* Architectural Master Plan Title Block */}
+          <div className="pointer-events-auto max-w-sm rounded-lg border-2 border-sky-500/70 bg-slate-950/95 p-3 font-mono shadow-2xl backdrop-blur-md">
+            <div className="border-b border-sky-500/40 pb-1.5 mb-1.5 flex items-center justify-between">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-sky-400">
+                MetroGrid Architectural Blueprint
+              </span>
+              <span className="rounded border border-emerald-500/40 bg-emerald-950/60 px-1.5 py-0.5 text-[8px] font-bold text-emerald-400">
+                APPROVED
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-[9px]">
+              <div>
+                <span className="text-slate-500 block text-[8px]">PROJECT</span>
+                <span className="font-bold text-slate-100 truncate block">{cityName || "METROPOLIS"}</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[8px]">DISCIPLINE / SHEET</span>
+                <span className="font-semibold text-sky-300 block">ARCH-01 / MASTER PLAN</span>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[8px]">SIMULATION METRICS</span>
+                <div className="flex items-center gap-1.5 font-bold">
+                  <span className="text-emerald-400">{scores?.livability ?? 75}L</span>
+                  <span className="text-sky-400">{scores?.traffic ?? 70}T</span>
+                  <span className="text-amber-400">{scores?.resources ?? 80}R</span>
+                </div>
+              </div>
+              <div>
+                <span className="text-slate-500 block text-[8px]">REVISION</span>
+                <span className="text-slate-300 block">REV 2.4-PROD</span>
+              </div>
+            </div>
+            <div className="mt-2 pt-1.5 border-t border-sky-500/30 flex justify-end">
+              <button
+                type="button"
+                onClick={handleDownloadBlueprint}
+                className="w-full flex items-center justify-center gap-1.5 rounded bg-sky-600 hover:bg-sky-500 text-white px-2.5 py-1 text-[10px] font-bold transition-colors shadow"
+              >
+                <Download className="size-3" />
+                <span>Export Schematic (PNG)</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Empty state (PRD §1.3 Phase 0, Phase 4 polish). Illustration from a
           Runway-generated visual treatment; purely decorative. */}

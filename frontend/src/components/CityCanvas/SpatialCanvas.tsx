@@ -582,6 +582,18 @@ function drawRoadDraft(
   ctx.restore();
 }
 
+const ZONE_CODES: Record<number, string> = {
+  1: "RES-01",
+  2: "COM-02",
+  3: "PRK-03",
+  4: "ROD-04",
+  5: "IND-05",
+  40: "PED-40",
+  41: "LOC-41",
+  42: "TRN-42",
+  43: "HWY-43",
+};
+
 function drawZone(
   ctx: CanvasRenderingContext2D,
   zone: SpatialZone,
@@ -591,6 +603,8 @@ function drawZone(
 ): void {
   const corners = zoneCorners(zone).map((c) => to(c.x, c.y));
   const color = zoneColor(zone.type);
+  const center = to(zone.position.x, zone.position.y);
+
   ctx.save();
   ctx.beginPath();
   corners.forEach((c, i) => {
@@ -598,35 +612,75 @@ function drawZone(
     else ctx.lineTo(c.px, c.py);
   });
   ctx.closePath();
-  ctx.fillStyle = hexToRgba(color, 0.18);
-  ctx.fill();
-  ctx.strokeStyle = selected ? "#ffd166" : color;
-  ctx.lineWidth = selected ? 2.2 : 1.4;
-  ctx.stroke();
 
-  if (selected) {
-    const center = to(zone.position.x, zone.position.y);
-    ctx.fillStyle = "#ffd166";
-    ctx.beginPath();
-    ctx.arc(center.px, center.py, HANDLE_R, 0, Math.PI * 2);
-    ctx.fill();
-    corners.forEach((c) => {
-      ctx.beginPath();
-      ctx.arc(c.px, c.py, HANDLE_R - 1, 0, Math.PI * 2);
-      ctx.fill();
-    });
+  // Blueprint background fill
+  ctx.fillStyle = hexToRgba(color, 0.22);
+  ctx.fill();
+
+  // Technical crosshatch inside zone
+  ctx.save();
+  ctx.clip();
+  ctx.strokeStyle = "rgba(56, 189, 248, 0.16)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let d = -200; d < 200; d += 12) {
+    ctx.moveTo(center.px + d - 200, center.py - 200);
+    ctx.lineTo(center.px + d + 200, center.py + 200);
   }
+  ctx.stroke();
   ctx.restore();
 
-  const center = to(zone.position.x, zone.position.y);
-  ctx.fillStyle = color;
+  // Technical double border
+  ctx.strokeStyle = selected ? "#ffd166" : color;
+  ctx.lineWidth = selected ? 2.5 : 1.6;
+  ctx.stroke();
+
+  // Inner dashed technical drafting line
+  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+  ctx.lineWidth = 0.8;
+  ctx.setLineDash([4, 4]);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Corner nodes
+  corners.forEach((c) => {
+    ctx.beginPath();
+    ctx.arc(c.px, c.py, selected ? HANDLE_R : 2.5, 0, Math.PI * 2);
+    ctx.fillStyle = selected ? "#ffd166" : "#38bdf8";
+    ctx.fill();
+  });
+
+  // Center registration tick
+  ctx.strokeStyle = "#38bdf8";
+  ctx.lineWidth = 1.2;
   ctx.beginPath();
-  ctx.arc(center.px, center.py, selected ? HANDLE_R - 1 : 3, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = "rgba(245,247,250,0.9)";
-  ctx.font = `${Math.max(11, Math.round(size * 0.5))}px "JetBrains Mono", monospace`;
+  ctx.moveTo(center.px - 5, center.py);
+  ctx.lineTo(center.px + 5, center.py);
+  ctx.moveTo(center.px, center.py - 5);
+  ctx.lineTo(center.px, center.py + 5);
+  ctx.stroke();
+
+  // Blueprint Zone Text Callout
+  const code = ZONE_CODES[zone.type] || "BLD-01";
+  const label = zoneLabel(zone.type);
+  const area = Math.round(zone.footprint.width * zone.footprint.depth);
+
+  ctx.fillStyle = "#ffffff";
+  ctx.font = `bold ${Math.max(10, Math.round(size * 0.45))}px "JetBrains Mono", monospace`;
   ctx.textAlign = "center";
-  ctx.fillText(zoneLabel(zone.type), center.px, center.py - 12);
+  ctx.fillText(`[${code}] ${label.toUpperCase()}`, center.px, center.py - 10);
+
+  if (size > 14) {
+    ctx.fillStyle = "#38bdf8";
+    ctx.font = `${Math.max(8, Math.round(size * 0.32))}px "JetBrains Mono", monospace`;
+    ctx.fillText(
+      `${zone.footprint.width.toFixed(1)}m × ${zone.footprint.depth.toFixed(1)}m (${area}m²)`,
+      center.px,
+      center.py + 12
+    );
+  }
+
+  ctx.restore();
 }
 
 function drawGhost(

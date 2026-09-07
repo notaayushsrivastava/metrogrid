@@ -7,7 +7,8 @@
  */
 
 import { useEffect, lazy, useRef, Suspense, useState, useMemo } from "react";
-import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D } from "lucide-react";
+import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D, Download } from "lucide-react";
+import { exportArchitecturalBlueprint } from "./utils/blueprintExport";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
@@ -109,8 +110,11 @@ export default function App() {
   const [terrainRadius, setTerrainRadius] = useState<number>(2);
   const [terrainStrength, setTerrainStrength] = useState<number>(1.0);
   const bannerRef = useRef<HTMLDivElement>(null);
-  const [isFreeformRoute, setIsFreeformRoute] = useState(
-    window.location.pathname === "/freeform"
+  const [isBuildRoute, setIsBuildRoute] = useState(
+    window.location.pathname === "/build" ||
+    window.location.pathname === "/freeform" ||
+    window.location.pathname === "/planner" ||
+    (!["/grid", "/plan"].includes(window.location.pathname))
   );
 
   // Sync terrainMode when tool changes
@@ -126,17 +130,22 @@ export default function App() {
 
   // Sync state freeformMode when route changes
   useEffect(() => {
-    if (isFreeformRoute && !state.freeformMode) {
+    if (isBuildRoute && !state.freeformMode) {
       planner.setFreeform(true);
-    } else if (!isFreeformRoute && state.freeformMode) {
+    } else if (!isBuildRoute && state.freeformMode) {
       planner.setFreeform(false);
     }
-  }, [isFreeformRoute, state.freeformMode, planner]);
+  }, [isBuildRoute, state.freeformMode, planner]);
 
   // Handle browser popstate navigation
   useEffect(() => {
     const onPopState = () => {
-      setIsFreeformRoute(window.location.pathname === "/freeform");
+      const isBuild =
+        window.location.pathname === "/build" ||
+        window.location.pathname === "/freeform" ||
+        window.location.pathname === "/planner" ||
+        (!["/grid", "/plan"].includes(window.location.pathname));
+      setIsBuildRoute(isBuild);
     };
     window.addEventListener("popstate", onPopState);
     return () => window.removeEventListener("popstate", onPopState);
@@ -214,34 +223,34 @@ export default function App() {
             <button
               type="button"
               onClick={() => {
-                setIsFreeformRoute(false);
-                planner.setFreeform(false);
-                window.history.pushState(null, "", "/grid");
-              }}
-              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
-                !isFreeformRoute
-                  ? "bg-background text-foreground shadow-sm"
-                  : "text-muted-foreground hover:text-foreground"
-              }`}
-            >
-              <Grid3x3 className="size-3.5" aria-hidden="true" />
-              <span>Grid Mode</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setIsFreeformRoute(true);
+                setIsBuildRoute(true);
                 planner.setFreeform(true);
-                window.history.pushState(null, "", "/freeform");
+                window.history.pushState(null, "", "/build");
               }}
               className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
-                isFreeformRoute
+                isBuildRoute
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:text-foreground"
               }`}
             >
               <Move3D className="size-3.5" aria-hidden="true" />
-              <span>Freeform 3D</span>
+              <span>Build</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setIsBuildRoute(false);
+                planner.setFreeform(false);
+                window.history.pushState(null, "", "/plan");
+              }}
+              className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-semibold transition-colors ${
+                !isBuildRoute
+                  ? "bg-background text-foreground shadow-sm"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              <Grid3x3 className="size-3.5" aria-hidden="true" />
+              <span>Plan Preview</span>
             </button>
           </div>
 
@@ -288,9 +297,36 @@ export default function App() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Import real street polylines and road layout</TooltipContent>
-
             </Tooltip>
-            {!isFreeformRoute && (
+
+            {!isBuildRoute && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="secondary"
+                    size="sm"
+                    aria-label="Download Architectural Blueprint"
+                    onClick={() => {
+                      exportArchitecturalBlueprint({
+                        cityName: state.cityName,
+                        tiles: state.tiles,
+                        zones: state.zones,
+                        roads: state.roads,
+                        terrain: state.terrain,
+                        scores: state.scores,
+                      });
+                    }}
+                    className="border border-sky-500/40 text-sky-400 hover:text-sky-300 gap-1.5"
+                  >
+                    <Download className="size-3.5" aria-hidden="true" />
+                    <span className="hidden sm:inline font-semibold">Download Blueprint</span>
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Download architectural blueprint drawing (PNG)</TooltipContent>
+              </Tooltip>
+            )}
+
+            {!isBuildRoute && (
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -388,11 +424,11 @@ export default function App() {
               />
             )}
 
-            {isFreeformRoute ? (
+            {isBuildRoute ? (
               <Suspense
                 fallback={
-                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
-                    Loading Freeform 3D WebGL Canvas…
+                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground font-mono">
+                    Loading 3D Build Canvas…
                   </div>
                 }
               >
@@ -428,7 +464,7 @@ export default function App() {
             ) : view3d ? (
               <Suspense
                 fallback={
-                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground">
+                  <div className="flex h-full w-full items-center justify-center text-sm text-muted-foreground font-mono">
                     Loading 3D view…
                   </div>
                 }
@@ -444,6 +480,8 @@ export default function App() {
             ) : (
               <CityCanvas
                 tiles={state.tiles}
+                cityName={state.cityName}
+                scores={state.scores}
                 toolActive={state.tool !== "select"}
                 hoverColor={hoverColor}
                 feedbacks={state.feedbacks}

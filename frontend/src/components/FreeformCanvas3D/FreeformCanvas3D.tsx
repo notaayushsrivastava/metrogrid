@@ -509,13 +509,14 @@ function SpatialRoad3DItem({
 /** 3D Terrain Grid Plane that physically displaces vertices and contours with elevation changes */
 function ElevatedTerrainGround({
   terrain,
+  size = 600,
   onClick,
 }: {
   terrain?: Map<string, number>;
+  size?: number;
   onClick: (e: { point: THREE.Vector3; stopPropagation: () => void; nativeEvent?: MouseEvent }) => void;
 }) {
-  const size = 500;
-  const segments = 125;
+  const segments = Math.min(250, Math.max(100, Math.floor(size / 4)));
 
   const geom = useMemo(() => {
     const g = new THREE.PlaneGeometry(size, size, segments, segments);
@@ -598,7 +599,7 @@ function ElevatedTerrainGround({
         onClick={onClick}
         receiveShadow
       >
-        <planeGeometry args={[1600, 1600]} />
+        <planeGeometry args={[Math.max(2500, size * 3), Math.max(2500, size * 3)]} />
         <meshStandardMaterial color="#080e1a" roughness={0.95} />
       </mesh>
     </group>
@@ -698,6 +699,32 @@ export function FreeformCanvas3D({
 
     onAddMesh(newMesh);
   };
+
+  // Calculate dynamic grid size to expand as objects/roads/terrain reach edges
+  const dynamicGridSize = useMemo(() => {
+    let maxExtent = 150;
+    for (const m of meshes) {
+      const halfW = (m.footprint?.width || 10) / 2;
+      const halfD = (m.footprint?.depth || 10) / 2;
+      maxExtent = Math.max(maxExtent, Math.abs(m.position.x) + halfW, Math.abs(m.position.z) + halfD);
+    }
+    for (const r of roads) {
+      for (const p of r.points) {
+        maxExtent = Math.max(maxExtent, Math.abs(p.x), Math.abs(p.y));
+      }
+    }
+    if (terrain && terrain.size > 0) {
+      for (const key of terrain.keys()) {
+        const [x, z] = key.split(",").map(Number);
+        if (!isNaN(x) && !isNaN(z)) {
+          maxExtent = Math.max(maxExtent, Math.abs(x), Math.abs(z));
+        }
+      }
+    }
+    const neededExtent = maxExtent + 80;
+    const neededSize = neededExtent * 2;
+    return Math.max(600, Math.ceil(neededSize / 100) * 100);
+  }, [meshes, roads, terrain]);
 
   // Group meshes by type for instanced rendering when mesh count is large
   const isLargeMap = meshes.length > 80;
@@ -802,11 +829,15 @@ export function FreeformCanvas3D({
                 shadow-mapSize-width={1024}
                 shadow-mapSize-height={1024}
               />
-              <gridHelper args={[600, 120, "#38bdf8", "#1e293b"]} position={[0, 0, 0]} />
+              <gridHelper
+                args={[dynamicGridSize, Math.floor(dynamicGridSize / 5), "#38bdf8", "#1e293b"]}
+                position={[0, 0, 0]}
+              />
 
               {/* Dynamically elevated terrain ground and contour grid */}
               <ElevatedTerrainGround
                 terrain={terrain}
+                size={dynamicGridSize}
                 onClick={handleGroundClick}
               />
 
