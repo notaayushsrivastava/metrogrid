@@ -6,7 +6,7 @@
  * rasterization of multi-segment road geometry into tile coordinates for pathfinding.
  */
 
-import type { RoadSubtype, SpatialRoad, SpatialRoadPoint } from "../types/spatial";
+import type { InfrastructureLevel, RoadSubtype, SpatialRoad, SpatialRoadPoint } from "../types/spatial";
 
 /** Default road width in meters based on subtype (PRD §5.5, §7.5). */
 export const DEFAULT_ROAD_WIDTHS: Record<RoadSubtype, number> = {
@@ -24,6 +24,99 @@ export const ROAD_SUBTYPE_NAMES: Record<RoadSubtype, string> = {
   43: "Express Highway",
   4:  "Road",
 };
+
+/** Discrete infrastructure level elevations in meters (PRD Phase 9). */
+export const LEVEL_ELEVATION_METERS: Record<InfrastructureLevel, number> = {
+  [-2]: -12.0, // Deep Subway / Tunnel
+  [-1]: -6.0,  // Shallow Tunnel / Subterranean
+  [0]:  0.0,   // Ground / Surface
+  [1]:  6.0,   // Elevated Viaduct / Overpass
+  [2]:  12.0,  // Skyway / Multi-deck bridge
+};
+
+export const LEVEL_NAMES: Record<InfrastructureLevel, string> = {
+  [-2]: "Deep Tunnel (L-2)",
+  [-1]: "Shallow Tunnel (L-1)",
+  [0]:  "Surface (L0)",
+  [1]:  "Elevated (L+1)",
+  [2]:  "Skyway (L+2)",
+};
+
+export const LEVEL_SHORT_BADGES: Record<InfrastructureLevel, string> = {
+  [-2]: "L-2 SUBWAY",
+  [-1]: "L-1 TUNNEL",
+  [0]:  "L0 SURFACE",
+  [1]:  "L+1 ELEVATED",
+  [2]:  "L+2 SKYWAY",
+};
+
+/** Return the discrete level for a road, defaulting to 0 (surface). */
+export function getRoadLevel(road: SpatialRoad): InfrastructureLevel {
+  return (road.level ?? 0) as InfrastructureLevel;
+}
+
+/** Return the physical elevation in meters for a road or default level height. */
+export function getRoadElevation(road: SpatialRoad): number {
+  if (road.elevation !== undefined) return road.elevation;
+  const lvl = getRoadLevel(road);
+  return LEVEL_ELEVATION_METERS[lvl] ?? 0.0;
+}
+
+/**
+ * Get elevation at a specific point along the road (handling ramps/slopes).
+ */
+export function getRoadPointElevation(
+  road: SpatialRoad,
+  pointIndex: number,
+  terrainElevation: number = 0
+): number {
+  if (road.points[pointIndex]?.z !== undefined) {
+    return road.points[pointIndex].z! + terrainElevation;
+  }
+
+  if (road.isRamp && road.points.length > 1) {
+    const startLvl = (road.startLevel ?? road.level ?? 0) as InfrastructureLevel;
+    const endLvl = (road.endLevel ?? ((road.level ?? 0) + 1)) as InfrastructureLevel;
+    const startElev = LEVEL_ELEVATION_METERS[startLvl] ?? 0.0;
+    const endElev = LEVEL_ELEVATION_METERS[endLvl] ?? 6.0;
+
+    const t = pointIndex / (road.points.length - 1);
+    const interpolated = startElev + (endElev - startElev) * t;
+    return interpolated + (interpolated === 0 ? terrainElevation : 0);
+  }
+
+  const baseElev = getRoadElevation(road);
+  return baseElev + (baseElev === 0 ? terrainElevation : 0);
+}
+
+/**
+ * Determine if two roads can connect without an explicit vertical connector/ramp.
+ * Per PRD Phase 9 rules:
+ * - Roads at different levels must not automatically intersect.
+ * - Same x/y coordinates may contain multiple valid road levels without merging.
+ */
+export function canConnectRoads(road1: SpatialRoad, road2: SpatialRoad): boolean {
+  const lvl1 = getRoadLevel(road1);
+  const lvl2 = getRoadLevel(road2);
+
+  if (lvl1 === lvl2) return true;
+
+  // If one is a ramp, check if it bridges to the other's level
+  if (road1.isRamp) {
+    const s1 = road1.startLevel ?? lvl1;
+    const e1 = road1.endLevel ?? (lvl1 + 1);
+    if (lvl2 === s1 || lvl2 === e1) return true;
+  }
+
+  if (road2.isRamp) {
+    const s2 = road2.startLevel ?? lvl2;
+    const e2 = road2.endLevel ?? (lvl2 + 1);
+    if (lvl1 === s2 || lvl1 === e2) return true;
+  }
+
+  return false;
+}
+
 
 /** Get default width in meters for a given road subtype. */
 export function getDefaultRoadWidth(type: number): number {

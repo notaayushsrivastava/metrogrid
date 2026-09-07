@@ -113,16 +113,29 @@ export interface SpatialZone {
 
 export type RoadSubtype = 4 | 40 | 41 | 42 | 43;
 
+/**
+ * Infrastructure levels for multi-level road networks (PRD Phase 9).
+ * -2: Deep Subway / Tunnel (-12m)
+ * -1: Shallow Tunnel / Subterranean (-6m)
+ *  0: Ground / Surface (0m)
+ * +1: Elevated Viaduct / Overpass (+6m)
+ * +2: Skyway / Multi-deck bridge (+12m)
+ */
+export type InfrastructureLevel = -2 | -1 | 0 | 1 | 2;
+
 export interface SpatialRoadPoint {
   x: number; // World / meter coords (X)
   y: number; // World / meter coords (Z or Y)
-  z?: number; // Elevation
+  z?: number; // Point-specific elevation override in meters
 }
 
 export interface RoadAttributes {
   name?: string;
   speedLimit?: number;
   capacity?: number;
+  startLevel?: InfrastructureLevel;
+  endLevel?: InfrastructureLevel;
+  isRamp?: boolean;
 }
 
 export interface SpatialRoad {
@@ -130,8 +143,11 @@ export interface SpatialRoad {
   type: RoadSubtype;
   points: SpatialRoadPoint[];
   width: number; // Road width in meters (4m ped, 8m local, 12m avenue, 16m highway)
-  elevation?: number;
-  level?: number;
+  elevation?: number; // Physical elevation offset in meters (e.g. 0, 6, 12, -6, -12)
+  level?: InfrastructureLevel; // Discrete infrastructure level (-2 to +2)
+  isRamp?: boolean; // Whether this segment is a sloped vertical connector/ramp
+  startLevel?: InfrastructureLevel; // Starting level if isRamp is true
+  endLevel?: InfrastructureLevel; // Ending level if isRamp is true
   attributes?: RoadAttributes;
 }
 
@@ -142,5 +158,6 @@ export interface TerrainCell {
 }
 
 export type TerrainEditMode = "raise" | "lower" | "smooth";
+
 
 

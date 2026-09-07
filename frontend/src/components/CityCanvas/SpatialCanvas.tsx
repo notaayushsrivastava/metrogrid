@@ -13,7 +13,7 @@ import { cellSize, cellToScreenPx, screenToGrid, type Camera, type GridPoint } f
 import { zoneColor, zoneCorners, zoneLabel, zoneOverlaps, resizeFromCorner } from "../../utils/spatial";
 import type { GridState } from "../../types/city";
 import type { SpatialZone, SpatialRoad, SpatialRoadPoint, RoadSubtype } from "../../types/spatial";
-import { getDefaultRoadWidth, rotateRoadAroundCenter } from "../../utils/freeformRoads";
+import { getDefaultRoadWidth, rotateRoadAroundCenter, getRoadLevel, LEVEL_SHORT_BADGES } from "../../utils/freeformRoads";
 
 
 export type SpatialDrag =
@@ -152,9 +152,15 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       });
     }
 
-    // 1. Draw Freeform Roads
+    // 1. Draw Freeform Roads (Sorted by Infrastructure Level: Tunnel -> Surface -> Elevated -> Skyway)
     const roads = p.roads ?? [];
-    for (const road of roads) {
+    const sortedRoads = [...roads].sort((a, b) => {
+      const la = a.level ?? 0;
+      const lb = b.level ?? 0;
+      return la - lb;
+    });
+
+    for (const road of sortedRoads) {
       drawRoad(
         ctx,
         road,
@@ -495,10 +501,46 @@ function drawRoad(
   const points = road.points.map((pt) => to(pt.x, pt.y));
   const color = ROAD_COLOR[road.type] ?? "#64748b";
   const strokeWidthPx = Math.max(3, (road.width / 10.0) * size);
+  const level = getRoadLevel(road);
+  const isElevated = level > 0 || (road.elevation !== undefined && road.elevation > 1.0);
+  const isTunnel = level < 0 || (road.elevation !== undefined && road.elevation < -1.0);
+  const isRamp = !!road.isRamp;
 
   ctx.save();
 
-  // Outer casing
+  // 1. Elevated Bridge Drop Shadow & Pier Indicators
+  if (isElevated) {
+    // Under-deck bridge shadow
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.px + 2, pt.py + 4);
+      else ctx.lineTo(pt.px + 2, pt.py + 4);
+    });
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    ctx.strokeStyle = "rgba(0, 0, 0, 0.45)";
+    ctx.lineWidth = strokeWidthPx + 6;
+    ctx.stroke();
+
+    // Structural Bridge Pier Tick Marks
+    for (let i = 0; i < points.length - 1; i++) {
+      const p1 = points[i];
+      const p2 = points[i + 1];
+      const midX = (p1.px + p2.px) / 2;
+      const midY = (p1.py + p2.py) / 2;
+      const angle = Math.atan2(p2.py - p1.py, p2.px - p1.px) + Math.PI / 2;
+      const pierSpan = (strokeWidthPx / 2) + 4;
+
+      ctx.beginPath();
+      ctx.moveTo(midX - Math.cos(angle) * pierSpan, midY - Math.sin(angle) * pierSpan);
+      ctx.lineTo(midX + Math.cos(angle) * pierSpan, midY + Math.sin(angle) * pierSpan);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    }
+  }
+
+  // 2. Outer Casing (Dashed for tunnels, solid/double for elevated/surface, striped for ramp)
   ctx.beginPath();
   points.forEach((pt, i) => {
     if (i === 0) ctx.moveTo(pt.px, pt.py);
@@ -506,21 +548,31 @@ function drawRoad(
   });
   ctx.lineCap = "round";
   ctx.lineJoin = "round";
-  ctx.strokeStyle = selected ? "#ffd166" : color;
-  ctx.lineWidth = strokeWidthPx + (selected ? 4 : 2);
-  ctx.stroke();
 
-  // Inner asphalt fill
+  if (isTunnel) {
+    ctx.setLineDash([8, 6]);
+    ctx.strokeStyle = selected ? "#ffd166" : "#a855f7";
+  } else if (isRamp) {
+    ctx.setLineDash([6, 3]);
+    ctx.strokeStyle = selected ? "#ffd166" : "#f59e0b";
+  } else {
+    ctx.strokeStyle = selected ? "#ffd166" : isElevated ? "#38bdf8" : color;
+  }
+  ctx.lineWidth = strokeWidthPx + (isElevated ? 5 : selected ? 4 : 2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 3. Inner asphalt fill
   ctx.beginPath();
   points.forEach((pt, i) => {
     if (i === 0) ctx.moveTo(pt.px, pt.py);
     else ctx.lineTo(pt.px, pt.py);
   });
-  ctx.strokeStyle = "#1e293b";
-  ctx.lineWidth = Math.max(1, strokeWidthPx - 2);
+  ctx.strokeStyle = isTunnel ? "#090d16" : isElevated ? "#0f172a" : "#1e293b";
+  ctx.lineWidth = Math.max(1, strokeWidthPx - (isElevated ? 1 : 2));
   ctx.stroke();
 
-  // Animated Glowing Traffic Flow Dash Line
+  // 4. Animated Glowing Traffic Flow Dash Line
   ctx.beginPath();
   points.forEach((pt, i) => {
     if (i === 0) ctx.moveTo(pt.px, pt.py);
@@ -528,12 +580,40 @@ function drawRoad(
   });
   ctx.setLineDash([8, 12]);
   ctx.lineDashOffset = -time * 30;
-  ctx.strokeStyle = road.type === 43 ? "#ffd166" : "#7cffb2";
+  ctx.strokeStyle = isTunnel ? "#c084fc" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#7cffb2";
   ctx.lineWidth = Math.max(1.5, strokeWidthPx * 0.25);
   ctx.stroke();
   ctx.setLineDash([]);
 
-  // Render Control Nodes if Selected
+  // 5. Level Badge / Drafting Callout Tag (if selected or zoomed in)
+  if (points.length >= 2 && (selected || size > 24)) {
+    const midIdx = Math.floor((points.length - 1) / 2);
+    const midP1 = points[midIdx];
+    const midP2 = points[midIdx + 1] || midP1;
+    const badgeX = (midP1.px + midP2.px) / 2;
+    const badgeY = (midP1.py + midP2.py) / 2 - (strokeWidthPx / 2) - 8;
+
+    const badgeText = isRamp
+      ? `RAMP L${road.startLevel ?? 0}→L${road.endLevel ?? 1}`
+      : LEVEL_SHORT_BADGES[level];
+
+    ctx.font = `bold ${Math.max(9, Math.round(size * 0.35))}px monospace`;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+
+    // Badge bg
+    const textWidth = ctx.measureText(badgeText).width;
+    ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
+    ctx.fillRect(badgeX - textWidth / 2 - 4, badgeY - 12, textWidth + 8, 14);
+    ctx.strokeStyle = isElevated ? "#38bdf8" : isTunnel ? "#a855f7" : isRamp ? "#f59e0b" : "#64748b";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(badgeX - textWidth / 2 - 4, badgeY - 12, textWidth + 8, 14);
+
+    ctx.fillStyle = selected ? "#ffd166" : isElevated ? "#38bdf8" : isTunnel ? "#c084fc" : isRamp ? "#fcd34d" : "#e2e8f0";
+    ctx.fillText(badgeText, badgeX, badgeY);
+  }
+
+  // 6. Render Control Nodes if Selected
   if (selected) {
     points.forEach((pt) => {
       ctx.beginPath();

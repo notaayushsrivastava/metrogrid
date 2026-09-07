@@ -20,6 +20,7 @@ import { Eye, EyeOff, Compass } from "lucide-react";
 import type { FreeformZoneMesh } from "../../utils/freeform";
 import { calculatePhysicalFootprint } from "../../utils/freeform";
 import type { SpatialRoad } from "../../types/spatial";
+import { getRoadLevel, getRoadPointElevation, LEVEL_SHORT_BADGES } from "../../utils/freeformRoads";
 import { TILE_META } from "../../config/tiles";
 
 interface FreeformCanvas3DProps {
@@ -467,8 +468,12 @@ function SpatialRoad3DItem({
   onSelect?: (id: string) => void;
 }) {
   if (!road.points || road.points.length < 2) return null;
+  const level = getRoadLevel(road);
   const color = ZONE_COLOR[road.type] ?? "#64748b";
+  const isElevated = level > 0 || (road.elevation !== undefined && road.elevation > 1.0);
+  const isTunnel = level < 0 || (road.elevation !== undefined && road.elevation < -1.0);
 
+  // Compute road segments with 3D elevation, pitch, and pillars
   return (
     <group onClick={(e) => { e.stopPropagation(); onSelect?.(road.id); }}>
       {road.points.slice(0, -1).map((pt1, i) => {
@@ -478,27 +483,110 @@ function SpatialRoad3DItem({
         const len = Math.hypot(dx, dz);
         if (len === 0) return null;
 
+        const terr1 = terrain ? (terrain.get(`${Math.round(pt1.x)},${Math.round(pt1.y)}`) ?? 0) : 0;
+        const terr2 = terrain ? (terrain.get(`${Math.round(pt2.x)},${Math.round(pt2.y)}`) ?? 0) : 0;
+        const elev1 = getRoadPointElevation(road, i, terr1);
+        const elev2 = getRoadPointElevation(road, i + 1, terr2);
+
         const midX = (pt1.x + pt2.x) / 2;
         const midZ = (pt1.y + pt2.y) / 2;
-        const rotY = -Math.atan2(dz, dx);
-        const elev1 = terrain ? (terrain.get(`${Math.round(pt1.x)},${Math.round(pt1.y)}`) ?? 0) : 0;
-        const elev2 = terrain ? (terrain.get(`${Math.round(pt2.x)},${Math.round(pt2.y)}`) ?? 0) : 0;
         const midY = (elev1 + elev2) / 2 + 0.04;
 
+        const rotY = -Math.atan2(dz, dx);
+        const dy = elev2 - elev1;
+        const rotZ = Math.atan2(dy, len);
+
+        // Support pillar calculation along the segment
+        const pillarTValues = len > 28 ? [0.25, 0.5, 0.75] : len > 14 ? [0.33, 0.67] : [0.5];
+        const pillars = isElevated
+          ? pillarTValues.map((t, pIdx) => {
+              const px = pt1.x + t * dx;
+              const pz = pt1.y + t * dz;
+              const deckY = elev1 + t * dy;
+              const groundY = terrain ? (terrain.get(`${Math.round(px)},${Math.round(pz)}`) ?? 0) : 0;
+              const height = deckY - groundY;
+              return { key: pIdx, px, pz, groundY, height };
+            }).filter((p) => p.height > 0.8)
+          : [];
+
         return (
-          <group key={i} position={[midX, midY, midZ]} rotation={[0, rotY, 0]}>
-            <mesh receiveShadow castShadow>
-              <boxGeometry args={[len, 0.08, road.width]} />
-              <meshStandardMaterial
-                color={isSelected ? "#ffd166" : color}
-                roughness={0.6}
+          <group key={i}>
+            {/* Main Road Deck Segment with Sloped Pitch */}
+            <group position={[midX, midY, midZ]} rotation={[0, rotY, rotZ]}>
+              <mesh receiveShadow castShadow>
+                <boxGeometry args={[len, isElevated ? 0.22 : 0.08, road.width]} />
+                <meshStandardMaterial
+                  color={isSelected ? "#ffd166" : isTunnel ? "#1e1b4b" : color}
+                  roughness={isElevated ? 0.75 : 0.6}
+                  metalness={isElevated ? 0.15 : 0.05}
+                />
+              </mesh>
+
+              {/* Elevated Bridge Parapets / Guardrails */}
+              {isElevated && (
+                <>
+                  <mesh position={[0, 0.22, road.width / 2]} receiveShadow castShadow>
+                    <boxGeometry args={[len, 0.35, 0.16]} />
+                    <meshStandardMaterial color="#475569" roughness={0.5} />
+                  </mesh>
+                  <mesh position={[0, 0.22, -road.width / 2]} receiveShadow castShadow>
+                    <boxGeometry args={[len, 0.35, 0.16]} />
+                    <meshStandardMaterial color="#475569" roughness={0.5} />
+                  </mesh>
+                </>
+              )}
+
+              {/* Subterranean Tunnel Guide Lights */}
+              {isTunnel && (
+                <>
+                  <mesh position={[0, 0.08, road.width / 2 - 0.2]}>
+                    <boxGeometry args={[len, 0.04, 0.08]} />
+                    <meshBasicMaterial color="#a855f7" />
+                  </mesh>
+                  <mesh position={[0, 0.08, -road.width / 2 + 0.2]}>
+                    <boxGeometry args={[len, 0.04, 0.08]} />
+                    <meshBasicMaterial color="#a855f7" />
+                  </mesh>
+                </>
+              )}
+
+              {/* Animated Traffic Flows */}
+              <AnimatedRoadTraffic3D
+                width={len}
+                depth={road.width}
+                isHighway={road.type === 43}
               />
-            </mesh>
-            <AnimatedRoadTraffic3D
-              width={len}
-              depth={road.width}
-              isHighway={road.type === 43}
-            />
+            </group>
+
+            {/* Elevated Structural Concrete Support Pillars / Piers */}
+            {pillars.map((p) => (
+              <group key={p.key} position={[p.px, p.groundY + p.height / 2, p.pz]}>
+                {/* Vertical Column */}
+                <mesh castShadow receiveShadow>
+                  <cylinderGeometry args={[Math.min(1.2, road.width * 0.18), Math.min(1.5, road.width * 0.22), p.height, 12]} />
+                  <meshStandardMaterial color="#334155" roughness={0.85} metalness={0.1} />
+                </mesh>
+                {/* Horizontal Crossbeam Pier Head */}
+                <mesh position={[0, p.height / 2 - 0.15, 0]} rotation={[0, rotY, 0]} castShadow>
+                  <boxGeometry args={[1.4, 0.3, road.width * 0.95]} />
+                  <meshStandardMaterial color="#1e293b" roughness={0.8} />
+                </mesh>
+              </group>
+            ))}
+
+            {/* Selection / Level 3D Callout Indicator */}
+            {isSelected && i === Math.floor((road.points.length - 1) / 2) && (
+              <Html position={[midX, midY + (isElevated ? 2.2 : 1.4), midZ]} center distanceFactor={40}>
+                <div className="flex flex-col items-center rounded-md border border-amber-400 bg-slate-950/90 px-2 py-1 font-mono text-[10px] text-amber-300 shadow-2xl backdrop-blur-md pointer-events-none">
+                  <span className="font-bold">
+                    {road.isRamp ? `RAMP [L${road.startLevel ?? 0} → L${road.endLevel ?? 1}]` : LEVEL_SHORT_BADGES[level]}
+                  </span>
+                  <span className="text-[9px] text-slate-300">
+                    {midY >= 0 ? `+${midY.toFixed(1)}m` : `${midY.toFixed(1)}m`} • {road.width}m width
+                  </span>
+                </div>
+              </Html>
+            )}
           </group>
         );
       })}

@@ -9,6 +9,7 @@ import type { GridState, GlobalScores } from "../types/city";
 import type { SpatialZone, SpatialRoad } from "../types/spatial";
 import { TILE_META } from "../config/tiles";
 import { zoneColor, zoneCorners, zoneLabel } from "./spatial";
+import { getRoadLevel, LEVEL_SHORT_BADGES } from "./freeformRoads";
 
 interface ExportBlueprintOptions {
   cityName?: string | null;
@@ -236,13 +237,55 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
     }
   });
 
-  // 6b. Freeform Roads
-  roads.forEach((road) => {
+  // 6b. Freeform Roads (Sorted by Infrastructure Level)
+  const sortedBlueprintRoads = [...roads].sort((a, b) => {
+    const la = a.level ?? 0;
+    const lb = b.level ?? 0;
+    return la - lb;
+  });
+
+  sortedBlueprintRoads.forEach((road) => {
     if (road.points.length < 2) return;
     const pts = road.points.map((pt) => toPx(pt.x, pt.y));
     const roadWidthPx = Math.max(6, (road.width / 10.0) * scale * 3.5);
+    const level = getRoadLevel(road);
+    const isElevated = level > 0 || (road.elevation !== undefined && road.elevation > 1.0);
+    const isTunnel = level < 0 || (road.elevation !== undefined && road.elevation < -1.0);
+    const isRamp = !!road.isRamp;
 
     ctx.save();
+
+    // Elevated Bridge Drop Shadow & Structural Support Pier Ticks
+    if (isElevated) {
+      ctx.beginPath();
+      pts.forEach((pt, i) => {
+        if (i === 0) ctx.moveTo(pt.x + 3, pt.y + 5);
+        else ctx.lineTo(pt.x + 3, pt.y + 5);
+      });
+      ctx.lineCap = "round";
+      ctx.lineJoin = "round";
+      ctx.strokeStyle = "rgba(0, 0, 0, 0.65)";
+      ctx.lineWidth = roadWidthPx + 6;
+      ctx.stroke();
+
+      // Pier tick marks
+      for (let i = 0; i < pts.length - 1; i++) {
+        const p1 = pts[i];
+        const p2 = pts[i + 1];
+        const midX = (p1.x + p2.x) / 2;
+        const midY = (p1.y + p2.y) / 2;
+        const angle = Math.atan2(p2.y - p1.y, p2.x - p1.x) + Math.PI / 2;
+        const span = (roadWidthPx / 2) + 5;
+
+        ctx.beginPath();
+        ctx.moveTo(midX - Math.cos(angle) * span, midY - Math.sin(angle) * span);
+        ctx.lineTo(midX + Math.cos(angle) * span, midY + Math.sin(angle) * span);
+        ctx.strokeStyle = "#38bdf8";
+        ctx.lineWidth = 3;
+        ctx.stroke();
+      }
+    }
+
     // Outer road casing
     ctx.beginPath();
     pts.forEach((pt, i) => {
@@ -251,30 +294,56 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
     });
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.85)";
-    ctx.lineWidth = roadWidthPx + 3;
+
+    if (isTunnel) {
+      ctx.setLineDash([10, 8]);
+      ctx.strokeStyle = "rgba(168, 85, 247, 0.85)";
+    } else if (isRamp) {
+      ctx.setLineDash([8, 4]);
+      ctx.strokeStyle = "rgba(245, 158, 11, 0.9)";
+    } else if (isElevated) {
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.95)";
+    } else {
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.75)";
+    }
+    ctx.lineWidth = roadWidthPx + (isElevated ? 6 : 3);
     ctx.stroke();
+    ctx.setLineDash([]);
 
     // Road body
-    ctx.strokeStyle = "#0d1f3b";
+    ctx.beginPath();
+    pts.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    });
+    ctx.strokeStyle = isTunnel ? "#080c16" : isElevated ? "#061226" : "#0d1f3b";
     ctx.lineWidth = roadWidthPx;
     ctx.stroke();
 
     // Centerline drafting dash
-    ctx.strokeStyle = road.type === 43 ? "#ffd166" : "#38bdf8";
+    ctx.beginPath();
+    pts.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.x, pt.y);
+      else ctx.lineTo(pt.x, pt.y);
+    });
+    ctx.strokeStyle = isTunnel ? "#c084fc" : isRamp ? "#fcd34d" : road.type === 43 ? "#ffd166" : "#38bdf8";
     ctx.lineWidth = 1.5;
     ctx.setLineDash([8, 6]);
     ctx.stroke();
+    ctx.setLineDash([]);
 
-    // Road Tag Annotation
+    // Road Tag Annotation with Infrastructure Level Badge
     if (pts.length >= 2) {
       const midIdx = Math.floor(pts.length / 2);
       const mid = pts[midIdx];
       ctx.font = "bold 11px monospace";
-      ctx.fillStyle = "#38bdf8";
+      ctx.fillStyle = isTunnel ? "#c084fc" : isElevated ? "#38bdf8" : isRamp ? "#fcd34d" : "#e2e8f0";
       ctx.textAlign = "center";
       const name = ROAD_NAMES[road.type] || "ROAD";
-      ctx.fillText(`[${name} • ${road.width}m]`, mid.x, mid.y - roadWidthPx / 2 - 6);
+      const levelBadge = isRamp
+        ? `[RAMP L${road.startLevel ?? 0}→L${road.endLevel ?? 1}]`
+        : `[${LEVEL_SHORT_BADGES[level]}]`;
+      ctx.fillText(`${levelBadge} ${name} • ${road.width}m`, mid.x, mid.y - roadWidthPx / 2 - 6);
     }
     ctx.restore();
   });
