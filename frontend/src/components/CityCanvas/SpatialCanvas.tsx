@@ -251,6 +251,14 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     };
   }, [redraw]);
 
+  // Reset draft road points when active tool switches away from road tool
+  useEffect(() => {
+    if (!isRoadToolActive(props.activeTool)) {
+      draftRoadPointsRef.current = [];
+      redraw();
+    }
+  }, [props.activeTool, isRoadToolActive, redraw]);
+
   // Pointer & Keyboard interactions for zone + freeform road authoring
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -335,9 +343,26 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         return;
       }
 
-      // 1. If road tool active, add vertex to draft road
+      // 1. If road tool active, add vertex to draft road and commit segment when 2 points exist
       if (p.freeformMode && isRoadToolActive(p.activeTool)) {
         draftRoadPointsRef.current.push({ x: world.x, y: world.y });
+        if (draftRoadPointsRef.current.length >= 2) {
+          const pts = [...draftRoadPointsRef.current];
+          const type = getSubtypeFromTool(p.activeTool);
+          const newRoad: SpatialRoad = {
+            id: `road_${Date.now()}`,
+            type,
+            points: pts,
+            width: getDefaultRoadWidth(type),
+            level: 0,
+            elevation: 0,
+          };
+          p.onAddRoad?.(newRoad);
+          p.onSelectRoad?.(newRoad.id);
+          p.onSelect(null);
+          // Chain from the last clicked point for continuous road drafting
+          draftRoadPointsRef.current = [{ x: world.x, y: world.y }];
+        }
         redraw();
         return;
       }

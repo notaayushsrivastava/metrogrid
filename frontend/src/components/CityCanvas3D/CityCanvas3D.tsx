@@ -8,8 +8,10 @@
  * The camera frames the current city bounds and orbit/pans/zooms freely.
  */
 
-import { Canvas } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls } from "@react-three/drei";
+import { useMemo, useRef } from "react";
+import * as THREE from "three";
 import { CityScene } from "./CityScene";
 import type { GridState } from "../../types/city";
 import { useTheme } from "../../hooks/useTheme";
@@ -18,9 +20,33 @@ interface CityCanvas3DProps {
   tiles: GridState;
   activeTool: string;
   onSelect?: (x: number, y: number) => void;
+  presentationCamera?: PresentationCameraState;
 }
 
-export function CityCanvas3D({ tiles, activeTool, onSelect }: CityCanvas3DProps) {
+export interface PresentationCameraState {
+  position: [number, number, number];
+  target: [number, number, number];
+}
+
+function PresentationCamera({ view }: { view: PresentationCameraState }) {
+  const { camera } = useThree();
+  const position = useMemo(() => new THREE.Vector3(), []);
+  const target = useMemo(() => new THREE.Vector3(), []);
+  const currentTarget = useRef(new THREE.Vector3(...view.target));
+
+  useFrame((_, delta) => {
+    position.set(...view.position);
+    target.set(...view.target);
+    const amount = 1 - Math.exp(-delta * 5);
+    camera.position.lerp(position, amount);
+    currentTarget.current.lerp(target, amount);
+    camera.lookAt(currentTarget.current);
+  });
+
+  return null;
+}
+
+export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera }: CityCanvas3DProps) {
   const { theme } = useTheme();
   const dark = theme === "dark";
 
@@ -40,13 +66,17 @@ export function CityCanvas3D({ tiles, activeTool, onSelect }: CityCanvas3DProps)
         castShadow
       />
       <CityScene tiles={tiles} activeTool={activeTool} onSelect={onSelect} />
-      <OrbitControls
-        enableDamping
-        dampingFactor={0.08}
-        maxPolarAngle={Math.PI / 2.05}
-        minDistance={5}
-        maxDistance={150}
-      />
+      {presentationCamera ? (
+        <PresentationCamera view={presentationCamera} />
+      ) : (
+        <OrbitControls
+          enableDamping
+          dampingFactor={0.08}
+          maxPolarAngle={Math.PI / 2.05}
+          minDistance={5}
+          maxDistance={150}
+        />
+      )}
     </Canvas>
   );
 }

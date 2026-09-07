@@ -52,6 +52,9 @@ class GeoFeature:
     points: tuple[tuple[float, float], ...]
     closed: bool
     order: tuple
+    level: int = 0
+    elevation: float = 0.0
+    is_ramp: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -139,6 +142,54 @@ def classify_feature(tags: dict[str, str]) -> tuple[int, int, bool] | None:
         return (LAYER_ROAD, tile_type, False)
 
     return None
+
+
+def classify_road_level_and_ramp(tags: dict[str, str]) -> tuple[int, float, bool]:
+    """Extract level (-2 to +2), elevation (meters), and is_ramp from OSM tags."""
+    level = 0
+    elevation = 0.0
+    is_ramp = False
+
+    layer_str = str(tags.get("layer", "")).strip()
+    has_layer = False
+    if layer_str:
+        try:
+            layer_val = int(layer_str)
+            level = max(-2, min(2, layer_val))
+            elevation = level * 6.0
+            has_layer = True
+        except ValueError:
+            pass
+
+    bridge = tags.get("bridge")
+    tunnel = tags.get("tunnel")
+    covered = tags.get("covered")
+    location = tags.get("location")
+
+    if not has_layer:
+        if bridge is not None and str(bridge).lower() not in ("no", "0", "false"):
+            level = 1
+            elevation = 6.0
+        elif (
+            (tunnel is not None and str(tunnel).lower() not in ("no", "0", "false"))
+            or str(covered).lower() == "yes"
+            or str(location).lower() in ("underground", "underwater")
+        ):
+            level = -1
+            elevation = -6.0
+
+    highway = str(tags.get("highway", ""))
+    incline = tags.get("incline")
+    ramp = tags.get("ramp")
+
+    if (
+        highway.endswith("_link")
+        or (ramp is not None and str(ramp).lower() in ("yes", "1", "true"))
+        or (incline is not None and incline != "0" and level != 0)
+    ):
+        is_ramp = True
+
+    return level, elevation, is_ramp
 
 
 # ---------------------------------------------------------------------------
@@ -353,11 +404,14 @@ def _extract_spatial_road(
     road_id: str,
     tile_type: int,
     meter_points: list[tuple[float, float]],
+    level: int = 0,
+    elevation: float = 0.0,
+    is_ramp: bool = False,
 ) -> GisSpatialRoad | None:
     if len(meter_points) < 2:
         return None
 
-    pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2)) for x, y in meter_points]
+    pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2), z=round(elevation, 2)) for x, y in meter_points]
     width = _ROAD_WIDTH_MAP.get(tile_type, 8.0)
 
     return GisSpatialRoad(
@@ -365,6 +419,9 @@ def _extract_spatial_road(
         type=tile_type,
         points=pts,
         width=width,
+        level=level,
+        elevation=elevation,
+        is_ramp=is_ramp,
     )
 
 
@@ -416,7 +473,14 @@ def rasterize_features(
         ]
         if feature.layer == LAYER_ROAD and not feature.closed:
             road_idx += 1
-            sr = _extract_spatial_road(f"gis-road-{road_idx}", feature.tile_type, meter_pts)
+            sr = _extract_spatial_road(
+                f"gis-road-{road_idx}",
+                feature.tile_type,
+                meter_pts,
+                level=feature.level,
+                elevation=feature.elevation,
+                is_ramp=feature.is_ramp,
+            )
             if sr:
                 spatial_roads.append(sr)
 
@@ -437,6 +501,7 @@ __all__ = [
     "LAYER_BUILDING",
     "LAYER_ROAD",
     "classify_feature",
+    "classify_road_level_and_ramp",
     "grid_span",
     "lonlat_to_grid",
     "lonlat_to_meters",

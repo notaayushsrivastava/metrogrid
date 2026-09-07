@@ -125,6 +125,20 @@ describe("deriveTileMap", () => {
     expect(map.get("2,2")?.type).toBe(1);
   });
 
+  it("derives tile map including freeform roads", () => {
+    const road = {
+      id: "rd1",
+      type: 42 as const,
+      points: [{ x: 0, y: 0 }, { x: 20, y: 0 }],
+      width: 10.0,
+      level: 0 as const,
+    };
+    const map = deriveTileMap(new Map(), [], [road]);
+    expect(map.size).toBeGreaterThan(0);
+    expect(map.get("0,0")?.type).toBe(42);
+    expect(map.get("1,0")?.type).toBe(42);
+  });
+
   it("is pure — does not mutate the input map", () => {
     const before = TILE_SET.size;
     deriveTileMap(TILE_SET, [zone()]);

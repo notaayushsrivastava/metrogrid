@@ -16,8 +16,9 @@
  */
 
 import { TILE_META } from "../config/tiles";
-import { type GridState, type TileObject } from "../types/city";
-import type { GridPointXY, SpatialZone, ZoneType } from "../types/spatial";
+import { type GridState, type TileObject, type TileType } from "../types/city";
+import type { GridPointXY, SpatialZone, SpatialRoad, ZoneType } from "../types/spatial";
+import { rasterizeFreeformRoadsToTiles } from "./freeformRoads";
 
 /** Default footprint for a newly placed freeform zone (cell units). */
 export const DEFAULT_ZONE_FOOTPRINT = { width: 3, depth: 3 };
@@ -131,13 +132,28 @@ function zoneToTileObject(zone: SpatialZone): TileObject {
 const ROAD_TYPES = new Set([4, 40, 41, 42, 43]);
 
 /**
- * Derive the effective sparse tile map from legacy tiles + freeform zones.
+ * Derive the effective sparse tile map from legacy tiles + freeform roads + freeform zones.
  *
- * Paint order: legacy tiles first, then zones in insertion order.
+ * Paint order: legacy tiles first, then freeform roads, then zones in insertion order.
  * Roads always win — zones can never overwrite road corridors.
  */
-export function deriveTileMap(tiles: GridState, zones: SpatialZone[]): GridState {
+export function deriveTileMap(
+  tiles: GridState,
+  zones: SpatialZone[],
+  roads: SpatialRoad[] = []
+): GridState {
   const derived = new Map(tiles);
+
+  // 1. Surface roads and ramps rasterize to the derived tile map for scoring
+  if (roads.length > 0) {
+    const surfaceRoads = roads.filter((r) => (r.level ?? 0) === 0 || r.isRamp);
+    const roadTiles = rasterizeFreeformRoadsToTiles(surfaceRoads, 10.0);
+    roadTiles.forEach((roadType, key) => {
+      derived.set(key, { type: roadType as TileType });
+    });
+  }
+
+  // 2. Freeform zones (protected from overwriting roads)
   for (const zone of zones) {
     for (const { x, y } of zoneCoveredCells(zone)) {
       const key = `${x},${y}`;

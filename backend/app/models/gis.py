@@ -80,6 +80,9 @@ class GisSpatialRoad(BaseModel):
     type: int
     points: list[GisSpatialRoadPoint]
     width: float
+    level: int = 0
+    elevation: float = 0.0
+    is_ramp: bool = False
 
 
 class GisImportResponse(BaseModel):

@@ -16,11 +16,11 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { OrbitControls, TransformControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { Eye, EyeOff, Compass } from "lucide-react";
+import { Eye, EyeOff, Compass, Layers, ArrowDownToLine } from "lucide-react";
 import type { FreeformZoneMesh } from "../../utils/freeform";
 import { calculatePhysicalFootprint } from "../../utils/freeform";
-import type { SpatialRoad } from "../../types/spatial";
-import { getRoadLevel, getRoadPointElevation, LEVEL_SHORT_BADGES } from "../../utils/freeformRoads";
+import type { SpatialRoad, RoadSubtype } from "../../types/spatial";
+import { getRoadLevel, getRoadPointElevation, LEVEL_SHORT_BADGES, getDefaultRoadWidth } from "../../utils/freeformRoads";
 import { TILE_META } from "../../config/tiles";
 
 interface FreeformCanvas3DProps {
@@ -461,17 +461,34 @@ function SpatialRoad3DItem({
   terrain,
   isSelected,
   onSelect,
+  viewCutawayLevel,
 }: {
   road: SpatialRoad;
   terrain?: Map<string, number>;
   isSelected: boolean;
   onSelect?: (id: string) => void;
+  viewCutawayLevel?: number | null;
 }) {
   if (!road.points || road.points.length < 2) return null;
   const level = getRoadLevel(road);
   const color = ZONE_COLOR[road.type] ?? "#64748b";
   const isElevated = level > 0 || (road.elevation !== undefined && road.elevation > 1.0);
   const isTunnel = level < 0 || (road.elevation !== undefined && road.elevation < -1.0);
+
+  // If viewCutawayLevel is active, filter out roads above the specified level
+  if (viewCutawayLevel !== null && viewCutawayLevel !== undefined) {
+    if (viewCutawayLevel < 0 && !isTunnel) {
+      return null;
+    }
+    if (viewCutawayLevel === 0 && isElevated) {
+      return null;
+    }
+    if (level > viewCutawayLevel && (road.elevation === undefined || road.elevation > viewCutawayLevel * 6.0 + 1.0)) {
+      return null;
+    }
+  }
+
+  const isSubterraneanMode = viewCutawayLevel !== null && viewCutawayLevel !== undefined && viewCutawayLevel < 0;
 
   // Compute road segments with 3D elevation, pitch, and pillars
   return (
@@ -488,6 +505,14 @@ function SpatialRoad3DItem({
         const elev1 = getRoadPointElevation(road, i, terr1);
         const elev2 = getRoadPointElevation(road, i + 1, terr2);
 
+        // Segment-level cutaway filtering for ramps
+        if (viewCutawayLevel !== null && viewCutawayLevel !== undefined) {
+          const segMaxElev = Math.max(elev1, elev2);
+          const limitMeters = viewCutawayLevel * 6.0 + 1.0;
+          if (viewCutawayLevel < 0 && segMaxElev > -0.5) return null;
+          if (viewCutawayLevel >= 0 && segMaxElev > limitMeters) return null;
+        }
+
         const midX = (pt1.x + pt2.x) / 2;
         const midZ = (pt1.y + pt2.y) / 2;
         const midY = (elev1 + elev2) / 2 + 0.04;
@@ -498,7 +523,7 @@ function SpatialRoad3DItem({
 
         // Support pillar calculation along the segment
         const pillarTValues = len > 28 ? [0.25, 0.5, 0.75] : len > 14 ? [0.33, 0.67] : [0.5];
-        const pillars = isElevated
+        const pillars = isElevated && !isSubterraneanMode
           ? pillarTValues.map((t, pIdx) => {
               const px = pt1.x + t * dx;
               const pz = pt1.y + t * dz;
@@ -513,10 +538,12 @@ function SpatialRoad3DItem({
           <group key={i}>
             {/* Main Road Deck Segment with Sloped Pitch */}
             <group position={[midX, midY, midZ]} rotation={[0, rotY, rotZ]}>
-              <mesh receiveShadow castShadow>
+              <mesh receiveShadow={!isSubterraneanMode} castShadow={!isSubterraneanMode}>
                 <boxGeometry args={[len, isElevated ? 0.22 : 0.08, road.width]} />
                 <meshStandardMaterial
-                  color={isSelected ? "#ffd166" : isTunnel ? "#1e1b4b" : color}
+                  color={isSelected ? "#ffd166" : isTunnel ? (isSubterraneanMode ? "#6366f1" : "#1e1b4b") : color}
+                  emissive={isSubterraneanMode && isTunnel ? "#818cf8" : isSelected ? "#f59e0b" : "#000000"}
+                  emissiveIntensity={isSubterraneanMode && isTunnel ? 0.7 : isSelected ? 0.2 : 0}
                   roughness={isElevated ? 0.75 : 0.6}
                   metalness={isElevated ? 0.15 : 0.05}
                 />
@@ -540,12 +567,12 @@ function SpatialRoad3DItem({
               {isTunnel && (
                 <>
                   <mesh position={[0, 0.08, road.width / 2 - 0.2]}>
-                    <boxGeometry args={[len, 0.04, 0.08]} />
-                    <meshBasicMaterial color="#a855f7" />
+                    <boxGeometry args={[len, isSubterraneanMode ? 0.1 : 0.04, 0.1]} />
+                    <meshBasicMaterial color={isSubterraneanMode ? "#c084fc" : "#a855f7"} />
                   </mesh>
                   <mesh position={[0, 0.08, -road.width / 2 + 0.2]}>
-                    <boxGeometry args={[len, 0.04, 0.08]} />
-                    <meshBasicMaterial color="#a855f7" />
+                    <boxGeometry args={[len, isSubterraneanMode ? 0.1 : 0.04, 0.1]} />
+                    <meshBasicMaterial color={isSubterraneanMode ? "#c084fc" : "#a855f7"} />
                   </mesh>
                 </>
               )}
@@ -599,10 +626,12 @@ function ElevatedTerrainGround({
   terrain,
   size = 600,
   onClick,
+  isSubterranean = false,
 }: {
   terrain?: Map<string, number>;
   size?: number;
   onClick: (e: { point: THREE.Vector3; stopPropagation: () => void; nativeEvent?: MouseEvent }) => void;
+  isSubterranean?: boolean;
 }) {
   const segments = Math.min(250, Math.max(100, Math.floor(size / 4)));
 
@@ -652,18 +681,21 @@ function ElevatedTerrainGround({
 
   return (
     <group>
-      {/* 1. Solid Ground Mesh with realistic lighting that physically elevates */}
+      {/* 1. Solid Ground Mesh or Subterranean Translucent X-Ray Plane */}
       <mesh
         geometry={geom}
         position={[0, 0, 0]}
         onClick={onClick}
-        receiveShadow
+        receiveShadow={!isSubterranean}
       >
         <meshStandardMaterial
-          color="#0f172a"
+          color={isSubterranean ? "#1e1b4b" : "#0f172a"}
           roughness={0.88}
           metalness={0.12}
           flatShading={false}
+          transparent={isSubterranean}
+          opacity={isSubterranean ? 0.08 : 1.0}
+          depthWrite={!isSubterranean}
         />
       </mesh>
 
@@ -673,23 +705,25 @@ function ElevatedTerrainGround({
         position={[0, 0.03, 0]}
       >
         <meshBasicMaterial
-          color="#38bdf8"
+          color={isSubterranean ? "#c084fc" : "#38bdf8"}
           wireframe
           transparent
-          opacity={0.18}
+          opacity={isSubterranean ? 0.28 : 0.18}
         />
       </mesh>
 
       {/* Outer buffer plane */}
-      <mesh
-        rotation={[-Math.PI / 2, 0, 0]}
-        position={[0, -0.05, 0]}
-        onClick={onClick}
-        receiveShadow
-      >
-        <planeGeometry args={[Math.max(2500, size * 3), Math.max(2500, size * 3)]} />
-        <meshStandardMaterial color="#080e1a" roughness={0.95} />
-      </mesh>
+      {!isSubterranean && (
+        <mesh
+          rotation={[-Math.PI / 2, 0, 0]}
+          position={[0, -0.05, 0]}
+          onClick={onClick}
+          receiveShadow
+        >
+          <planeGeometry args={[Math.max(2500, size * 3), Math.max(2500, size * 3)]} />
+          <meshStandardMaterial color="#080e1a" roughness={0.95} />
+        </mesh>
+      )}
     </group>
   );
 }
@@ -710,25 +744,33 @@ export function FreeformCanvas3D({
   onAddMesh,
   onUpdateMesh,
   onRemoveMesh,
+  onAddRoad,
+  onRemoveRoad,
   onGestureStart,
   onCommitGesture,
 }: FreeformCanvas3DProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null!);
   const [transformMode, setTransformMode] = useState<"translate" | "rotate" | "scale">("translate");
   const [hideZones, setHideZones] = useState(false);
+  const [viewCutawayLevel, setViewCutawayLevel] = useState<number | null>(null);
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
   // Handle keyboard shortcuts for delete (avoid conflicting with WASD/tool shortcuts)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) return;
-      if ((e.key === "Delete" || e.key === "Backspace") && selectedMeshId) {
-        onRemoveMesh(selectedMeshId);
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (selectedRoadId) {
+          onRemoveRoad?.(selectedRoadId);
+          onSelectRoad?.(null);
+        } else if (selectedMeshId) {
+          onRemoveMesh(selectedMeshId);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedMeshId, onRemoveMesh]);
+  }, [selectedMeshId, selectedRoadId, onRemoveMesh, onRemoveRoad, onSelectRoad]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -742,7 +784,7 @@ export function FreeformCanvas3D({
       return;
     }
 
-    // Accessibility check: only add zone / edit terrain on a clean click, not camera orbit drag
+    // Accessibility check: only add zone / road / edit terrain on a clean click, not camera orbit drag
     if (pointerDownPosRef.current && e.nativeEvent) {
       const dist = Math.hypot(
         e.nativeEvent.clientX - pointerDownPosRef.current.x,
@@ -768,7 +810,7 @@ export function FreeformCanvas3D({
       commercial: 2,
       green: 3,
       industrial: 5,
-      road: 4,
+      road: 41,
       road_local: 41,
       road_transit: 42,
       road_highway: 43,
@@ -776,13 +818,37 @@ export function FreeformCanvas3D({
     const zoneType = typeMap[activeTool] ?? 1;
     const isRoad = isRoadMeshType(zoneType);
 
+    if (isRoad) {
+      const roadSubtype = (zoneType as RoadSubtype);
+      const clickX = Math.round(e.point.x * 10) / 10;
+      const clickZ = Math.round(e.point.z * 10) / 10;
+      const roadWidth = getDefaultRoadWidth(roadSubtype);
+
+      const newRoad: SpatialRoad = {
+        id: `road_${Date.now()}`,
+        type: roadSubtype,
+        points: [
+          { x: clickX - 10, y: clickZ },
+          { x: clickX + 10, y: clickZ },
+        ],
+        width: roadWidth,
+        level: 0,
+        elevation: 0,
+      };
+
+      onAddRoad?.(newRoad);
+      onSelectRoad?.(newRoad.id);
+      onSelectMesh(null);
+      return;
+    }
+
     const newMesh: FreeformZoneMesh = {
       id: `mesh_freeform_${Date.now()}`,
       type: zoneType,
       position: { x: Math.round(e.point.x * 10) / 10, y: 0, z: Math.round(e.point.z * 10) / 10 },
       rotation: 0,
-      footprint: isRoad ? { width: 20, depth: 6 } : { width: 10, depth: 10 },
-      area: isRoad ? 120 : 100,
+      footprint: { width: 10, depth: 10 },
+      area: 100,
     };
 
     onAddMesh(newMesh);
@@ -817,6 +883,8 @@ export function FreeformCanvas3D({
   // Group meshes by type for instanced rendering when mesh count is large
   const isLargeMap = meshes.length > 80;
   const typesPresent = useMemo(() => Array.from(new Set(meshes.map((m) => m.type))), [meshes]);
+  const isSubterraneanMode = viewCutawayLevel !== null && viewCutawayLevel < 0;
+  const hideBuildingZones = hideZones || isSubterraneanMode;
 
   return (
     <div className="relative h-full w-full bg-[#0b1120] overflow-hidden select-none">
@@ -861,6 +929,50 @@ export function FreeformCanvas3D({
 
         <div className="mx-1 h-4 w-[1px] bg-border" />
 
+        {/* Level Cutaway View Controls (View Under Map / Hide Above Level) */}
+        <div className="flex items-center gap-1 rounded bg-secondary/80 p-0.5">
+          <Layers className="size-3.5 text-muted-foreground ml-1" />
+          <button
+            type="button"
+            onClick={() => setViewCutawayLevel(null)}
+            className={`rounded px-2 py-0.5 text-xs font-semibold transition-colors ${
+              viewCutawayLevel === null
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+            title="Show all elevation levels (flyovers, surface, and subterranean)"
+          >
+            All Levels
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewCutawayLevel(0)}
+            className={`rounded px-2 py-0.5 text-xs font-semibold transition-colors ${
+              viewCutawayLevel === 0
+                ? "bg-primary text-primary-foreground"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+            title="Hide elevated bridges and flyovers to inspect surface & ground level"
+          >
+            L0 & Below
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewCutawayLevel(-1)}
+            className={`flex items-center gap-1 rounded px-2.5 py-0.5 text-xs font-semibold transition-colors ${
+              viewCutawayLevel === -1
+                ? "bg-metro-blue text-slate-950 shadow-sm"
+                : "text-muted-foreground hover:text-foreground hover:bg-accent"
+            }`}
+            title="View under the map: hides surface structures and turns ground transparent to view subterranean tunnels & underpasses"
+          >
+            <ArrowDownToLine className="size-3" />
+            <span>Subterranean (View Under Map)</span>
+          </button>
+        </div>
+
+        <div className="mx-1 h-4 w-[1px] bg-border" />
+
         <button
           type="button"
           onClick={() => setHideZones((h) => !h)}
@@ -881,10 +993,38 @@ export function FreeformCanvas3D({
         <span>WASD: Pan Map • Q/E: Elevate Up/Down</span>
       </div>
 
-      {hideZones && (
+      {hideZones && !isSubterraneanMode && (
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 pointer-events-none flex items-center gap-2 rounded-full border border-amber-500/40 bg-amber-950/80 px-4 py-1 font-mono text-xs font-semibold text-amber-300 shadow-xl backdrop-blur-md">
           <EyeOff className="size-3.5 animate-pulse" />
           <span>Zones Hidden • Street Layout & Traffic Flow View Active</span>
+        </div>
+      )}
+
+      {isSubterraneanMode && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-metro-blue/50 bg-slate-950/90 px-4 py-1.5 font-mono text-xs font-semibold text-metro-blue shadow-2xl backdrop-blur-md">
+          <ArrowDownToLine className="size-3.5 text-metro-blue animate-bounce" />
+          <span>Subterranean View Active • Underpasses & Tunnels Visible Under Map</span>
+          <button
+            type="button"
+            onClick={() => setViewCutawayLevel(null)}
+            className="ml-2 rounded bg-metro-blue/20 px-2 py-0.5 text-[10px] font-bold text-metro-blue hover:bg-metro-blue/30 transition-colors"
+          >
+            Reset to All
+          </button>
+        </div>
+      )}
+
+      {viewCutawayLevel === 0 && (
+        <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/90 px-4 py-1.5 font-mono text-xs font-semibold text-blue-200 shadow-2xl backdrop-blur-md">
+          <Layers className="size-3.5 text-blue-400" />
+          <span>Surface Cutaway Active • Elevated Flyovers Hidden</span>
+          <button
+            type="button"
+            onClick={() => setViewCutawayLevel(null)}
+            className="ml-2 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-200 hover:bg-slate-700 transition-colors"
+          >
+            Reset
+          </button>
         </div>
       )}
 
@@ -896,7 +1036,7 @@ export function FreeformCanvas3D({
 
       <Canvas
         camera={{ position: [0, 40, 50], fov: 45 }}
-        shadows={!isLargeMap}
+        shadows={!isLargeMap && !isSubterraneanMode}
         onPointerDown={(e) => {
           handlePointerDown(e);
           if (e.target === e.currentTarget) {
@@ -909,16 +1049,16 @@ export function FreeformCanvas3D({
           {() => (
             <>
               <WASDCameraController orbitRef={orbitRef} />
-              <ambientLight intensity={0.7} />
+              <ambientLight intensity={isSubterraneanMode ? 0.9 : 0.7} />
               <directionalLight
                 position={[50, 80, 40]}
                 intensity={1.2}
-                castShadow={!isLargeMap}
+                castShadow={!isLargeMap && !isSubterraneanMode}
                 shadow-mapSize-width={1024}
                 shadow-mapSize-height={1024}
               />
               <gridHelper
-                args={[dynamicGridSize, Math.floor(dynamicGridSize / 5), "#38bdf8", "#1e293b"]}
+                args={[dynamicGridSize, Math.floor(dynamicGridSize / 5), isSubterraneanMode ? "#a855f7" : "#38bdf8", "#1e293b"]}
                 position={[0, 0, 0]}
               />
 
@@ -927,9 +1067,10 @@ export function FreeformCanvas3D({
                 terrain={terrain}
                 size={dynamicGridSize}
                 onClick={handleGroundClick}
+                isSubterranean={isSubterraneanMode}
               />
 
-              {/* 3D Freeform Multi-segment Roads (Preserved & Animating Always) */}
+              {/* 3D Freeform Multi-segment Roads (Filtered by viewCutawayLevel) */}
               {roads.map((road) => (
                 <SpatialRoad3DItem
                   key={road.id}
@@ -937,11 +1078,12 @@ export function FreeformCanvas3D({
                   terrain={terrain}
                   isSelected={road.id === selectedRoadId}
                   onSelect={onSelectRoad}
+                  viewCutawayLevel={viewCutawayLevel}
                 />
               ))}
 
-              {/* 3D Zone Meshes (Hidden when hideZones is active) */}
-              {!hideZones && (
+              {/* 3D Zone Meshes (Hidden when hideZones or Subterranean View is active) */}
+              {!hideBuildingZones && (
                 isLargeMap ? (
                   <>
                     {typesPresent.map((t) => (
@@ -998,7 +1140,7 @@ export function FreeformCanvas3D({
                 makeDefault
                 minDistance={5}
                 maxDistance={350}
-                maxPolarAngle={Math.PI / 2 - 0.05}
+                maxPolarAngle={isSubterraneanMode ? Math.PI - 0.05 : Math.PI / 2 - 0.05}
               />
             </>
           )}

@@ -165,6 +165,9 @@ export interface GisSpatialRoad {
   type: number;
   points: GisSpatialRoadPoint[];
   width: number;
+  level?: number;
+  elevation?: number;
+  isRamp?: boolean;
 }
 
 /** `POST /api/gis/import` response (PRD §12.2, exact contract). */

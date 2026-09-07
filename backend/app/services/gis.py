@@ -27,6 +27,7 @@ from app.services.rasterizer import (
     LAYER_BUILDING,
     LAYER_ROAD,
     classify_feature,
+    classify_road_level_and_ramp,
     grid_span,
 )
 
@@ -178,6 +179,9 @@ def overpass_elements_to_features(elements: list[dict[str, Any]]) -> list[GeoFea
         if classified is None:
             continue
         layer, tile_type, closed = classified
+        level, elevation, is_ramp = 0, 0.0, False
+        if layer == LAYER_ROAD:
+            level, elevation, is_ramp = classify_road_level_and_ramp(tags)
 
         if element.get("type") == "relation":
             members = element.get("members") or []
@@ -196,6 +200,9 @@ def overpass_elements_to_features(elements: list[dict[str, Any]]) -> list[GeoFea
                             points=points,
                             closed=closed,
                             order=(int(element.get("id", 0)), index),
+                            level=level,
+                            elevation=elevation,
+                            is_ramp=is_ramp,
                         )
                     )
             continue
@@ -211,6 +218,9 @@ def overpass_elements_to_features(elements: list[dict[str, Any]]) -> list[GeoFea
                 points=points,
                 closed=closed,
                 order=(int(element.get("id", 0)), 0),
+                level=level,
+                elevation=elevation,
+                is_ramp=is_ramp,
             )
         )
     return features

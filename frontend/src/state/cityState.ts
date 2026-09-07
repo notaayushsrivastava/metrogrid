@@ -663,7 +663,8 @@ export function useCityPlanner(): CityPlanner {
     void runCalculation(
       deriveTileMap(
         new Map(Object.entries(grid).map(([k, v]) => [k, { type: v.type as TileType }])),
-        zones
+        zones,
+        roads
       ),
       null
     );
@@ -691,6 +692,9 @@ export function useCityPlanner(): CityPlanner {
         type: (sr.type as 4 | 40 | 41 | 42 | 43) ?? 41,
         points: sr.points,
         width: sr.width,
+        level: (sr.level as import("../types/spatial").InfrastructureLevel) ?? 0,
+        elevation: sr.elevation ?? 0,
+        isRamp: sr.isRamp ?? false,
       }));
 
       const hasNewSpatial = importedZones.length > 0 || importedRoads.length > 0;
@@ -724,7 +728,7 @@ export function useCityPlanner(): CityPlanner {
 
   const recalcDerived = useCallback(() => {
     void runCalculation(
-      deriveTileMap(stateRef.current.tiles, stateRef.current.zones),
+      deriveTileMap(stateRef.current.tiles, stateRef.current.zones, stateRef.current.roads),
       null
     );
   }, [runCalculation]);

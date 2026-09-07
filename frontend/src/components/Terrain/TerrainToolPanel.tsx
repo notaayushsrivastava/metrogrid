@@ -63,7 +63,7 @@ export function TerrainToolPanel({
           variant={mode === "smooth" ? "default" : "secondary"}
           size="sm"
           onClick={() => onModeChange("smooth")}
-          className={`gap-1 text-xs h-7 px-2.5 ${mode === "smooth" ? "bg-purple-500 hover:bg-purple-600 font-bold" : ""}`}
+          className={`gap-1 text-xs h-7 px-2.5 ${mode === "smooth" ? "bg-metro-blue hover:bg-blue-500 text-slate-950 font-bold" : ""}`}
         >
           <Waves className="size-3" />
           <span>Smooth</span>

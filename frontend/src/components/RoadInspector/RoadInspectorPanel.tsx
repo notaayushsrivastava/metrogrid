@@ -139,7 +139,7 @@ export function RoadInspectorPanel({
                 currentLevel > 0
                   ? "bg-sky-500/20 text-sky-300 border border-sky-500/40"
                   : currentLevel < 0
-                  ? "bg-purple-500/20 text-purple-300 border border-purple-500/40"
+                  ? "bg-metro-blue/20 text-metro-blue border border-metro-blue/40"
                   : "bg-slate-700 text-slate-200"
               }`}
             >
