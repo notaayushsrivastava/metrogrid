@@ -13,6 +13,8 @@ import {
   saveLayout,
 } from "../services/api";
 import { mergeImportedTiles } from "../utils/gis";
+import { deriveTileMap } from "../utils/spatial";
+import type { GridPointXY, SpatialZone } from "../types/spatial";
 import {
   GRID_MAX,
   GRID_MIN,
@@ -43,6 +45,13 @@ export interface MetricMovement {
 
 export interface CityState {
   tiles: GridState;
+  /** Freeform spatial zones (PRD Phase 5 — Day 2). Their derived tile map
+   *  is what feeds the (unchanged) scoring engine. */
+  zones: SpatialZone[];
+  /** When true the canvas places freeform zones instead of grid tiles. */
+  freeformMode: boolean;
+  /** Selected zone id (Select tool), enabling move/rotate/resize handles. */
+  selectedZoneId: string | null;
   tool: ToolId;
   scores: GlobalScores | null;
   movement: MetricMovement | null;
@@ -59,6 +68,10 @@ export interface CityState {
   lastSavedAt: number | null;
   /** Name of the city as last saved/loaded (status bar). */
   cityName: string | null;
+  /** Undo stack of zone snapshots (spatial edits only). */
+  undoStack: SpatialZone[][];
+  /** Redo stack of zone snapshots. */
+  redoStack: SpatialZone[][];
 }
 
 export const FEEDBACK_MS = 1500;
@@ -75,13 +88,27 @@ type CityAction =
   | { type: "LAYOUTS_LOADING" }
   | { type: "LAYOUTS_LOADED"; storage: "supabase" | "memory"; layouts: LayoutSummary[] }
   | { type: "LAYOUTS_ERROR"; error: string }
-  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }> }
+  | { type: "LAYOUT_LOAD"; grid: Record<string, { type: number }>; zones?: SpatialZone[] }
   | { type: "IMPORT_MERGED"; tiles: GridState }
   | { type: "SAVED"; name: string; at: number }
-  | { type: "CITY_NAMED"; name: string };
+  | { type: "CITY_NAMED"; name: string }
+  | { type: "SET_FREEFORM"; on: boolean }
+  | { type: "ZONE_ADD"; zone: SpatialZone }
+  | { type: "ZONE_REMOVE"; id: string }
+  | { type: "ZONE_MOVE"; id: string; position: GridPointXY }
+  | { type: "ZONE_ROTATE"; id: string; rotation: number }
+  | { type: "ZONE_UPDATE_LIVE"; zone: SpatialZone }
+  | { type: "ZONE_UPDATE"; zone: SpatialZone }
+  | { type: "SELECT_ZONE"; id: string | null }
+  | { type: "SPATIAL_SNAPSHOT"; zones: SpatialZone[] }
+  | { type: "UNDO" }
+  | { type: "REDO" };
 
 export const initialState: CityState = {
   tiles: new Map(),
+  zones: [],
+  freeformMode: false,
+  selectedZoneId: null,
   tool: "residential",
   scores: null,
   movement: null,
@@ -96,6 +123,8 @@ export const initialState: CityState = {
   congestion: null,
   lastSavedAt: null,
   cityName: null,
+  undoStack: [],
+  redoStack: [],
 };
 
 export function tileKey(x: number, y: number): string {
@@ -182,7 +211,13 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
       for (const [key, tile] of Object.entries(action.grid)) {
         tiles.set(key, { type: tile.type as TileType });
       }
-      return { ...state, tiles, feedbacks: [] };
+      return {
+        ...state,
+        tiles,
+        zones: action.zones ?? [],
+        selectedZoneId: null,
+        feedbacks: [],
+      };
     }
 
     case "IMPORT_MERGED":
@@ -194,6 +229,97 @@ export function cityReducer(state: CityState, action: CityAction): CityState {
 
     case "CITY_NAMED":
       return { ...state, cityName: action.name };
+
+    case "SET_FREEFORM":
+      return { ...state, freeformMode: action.on, selectedZoneId: null };
+
+    case "SELECT_ZONE":
+      return { ...state, selectedZoneId: action.id };
+
+    case "ZONE_ADD": {
+      const zones = [...state.zones, action.zone];
+      return {
+        ...state,
+        zones,
+        selectedZoneId: action.zone.id,
+        undoStack: [...state.undoStack.slice(-49), state.zones],
+        redoStack: [],
+      };
+    }
+
+    case "ZONE_REMOVE": {
+      const zones = state.zones.filter((z) => z.id !== action.id);
+      return {
+        ...state,
+        zones,
+        selectedZoneId: null,
+        undoStack: [...state.undoStack.slice(-49), state.zones],
+        redoStack: [],
+      };
+    }
+
+    case "ZONE_MOVE": {
+      const zones = state.zones.map((z) =>
+        z.id === action.id ? { ...z, position: action.position } : z
+      );
+      return { ...state, zones };
+    }
+
+    case "ZONE_ROTATE": {
+      const zones = state.zones.map((z) =>
+        z.id === action.id ? { ...z, rotation: action.rotation } : z
+      );
+      return { ...state, zones };
+    }
+
+    case "ZONE_UPDATE": {
+      const zones = state.zones.map((z) => (z.id === action.zone.id ? action.zone : z));
+      return {
+        ...state,
+        zones,
+        undoStack: [...state.undoStack.slice(-49), state.zones],
+        redoStack: [],
+      };
+    }
+
+    case "ZONE_UPDATE_LIVE": {
+      // Live drag update — no undo entry (the gesture commit handles it).
+      const zones = state.zones.map((z) => (z.id === action.zone.id ? action.zone : z));
+      return { ...state, zones };
+    }
+
+    case "SPATIAL_SNAPSHOT": {
+      // Push the *pre-gesture* zone list onto undo, keep the current one.
+      return {
+        ...state,
+        undoStack: [...state.undoStack.slice(-49), action.zones],
+        redoStack: [],
+      };
+    }
+
+    case "UNDO": {
+      if (!state.undoStack.length) return state;
+      const previous = state.undoStack[state.undoStack.length - 1];
+      return {
+        ...state,
+        zones: previous,
+        undoStack: state.undoStack.slice(0, -1),
+        redoStack: [...state.redoStack.slice(-49), state.zones],
+        selectedZoneId: null,
+      };
+    }
+
+    case "REDO": {
+      if (!state.redoStack.length) return state;
+      const next = state.redoStack[state.redoStack.length - 1];
+      return {
+        ...state,
+        zones: next,
+        redoStack: state.redoStack.slice(0, -1),
+        undoStack: [...state.undoStack.slice(-49), state.zones],
+        selectedZoneId: null,
+      };
+    }
 
     default:
       return state;
@@ -215,6 +341,18 @@ export interface CityPlanner {
   loadCity: (layoutId: string) => Promise<void>;
   /** Arm a 3D model URL so the next placed tile carries it (PRD §16.2). */
   armModel: (url: string | null) => void;
+  /* Phase 5 (Day 2) — freeform spatial zones */
+  setFreeform: (on: boolean) => void;
+  selectZone: (id: string | null) => void;
+  addZone: (zone: SpatialZone) => void;
+  removeZone: (id: string) => void;
+  moveZone: (id: string, position: GridPointXY) => void;
+  rotateZone: (id: string, rotation: number) => void;
+  resizeZone: (zone: SpatialZone) => void;
+  beginSpatialGesture: () => void;
+  commitZones: () => void;
+  undoZones: () => void;
+  redoZones: () => void;
   /**
    * GIS bounding-box import (PRD §7, Phase 4). Fetches the imported sparse
    * tiles, merges them into the authoritative state (existing tiles win), and
@@ -291,6 +429,8 @@ export function useCityPlanner(): CityPlanner {
   );
 
   const modelUrlRef = useRef<string | null>(null);
+  /** Pre-gesture zone snapshot for spatial undo (set on gesture start). */
+  const gestureSnapshotRef = useRef<SpatialZone[] | null>(null);
 
   const placeAt = useCallback(
     (x: number, y: number) => {
@@ -377,10 +517,16 @@ export function useCityPlanner(): CityPlanner {
   const saveCity = useCallback(
     async (name: string) => {
       const current = stateRef.current;
-      const grid_state: Record<string, { type: number }> = {};
+      const tilesPayload: Record<string, { type: number }> = {};
       current.tiles.forEach((tile, key) => {
-        grid_state[key] = { type: tile.type };
+        tilesPayload[key] = { type: tile.type };
       });
+      // v2 wrapper when freeform zones exist (PRD Phase 5); legacy flat map
+      // otherwise — both shapes load on both backends.
+      const grid_state: Record<string, unknown> =
+        current.zones.length > 0
+          ? { version: 2, tiles: tilesPayload, zones: current.zones }
+          : tilesPayload;
       await saveLayout({ name, grid_state });
       dispatch({ type: "SAVED", name, at: Date.now() });
       await refreshLayouts();
@@ -390,12 +536,31 @@ export function useCityPlanner(): CityPlanner {
 
   const loadCity = useCallback(async (layoutId: string) => {
     const detail = await loadLayout(layoutId);
-    dispatch({ type: "LAYOUT_LOAD", grid: detail.grid_state });
+    // Detect the v2 wrapper (tiles + zones) vs the legacy flat map.
+    const raw = detail.grid_state as unknown;
+    const isV2 =
+      typeof raw === "object" &&
+      raw !== null &&
+      "version" in (raw as Record<string, unknown>) &&
+      "tiles" in (raw as Record<string, unknown>);
+    const grid: Record<string, { type: number }> = isV2
+      ? ((raw as { tiles: Record<string, { type: number }> }).tiles)
+      : (detail.grid_state as Record<string, { type: number }>);
+    const zones: SpatialZone[] = isV2
+      ? ((raw as { zones: SpatialZone[] }).zones ?? [])
+      : [];
+    dispatch({ type: "LAYOUT_LOAD", grid, zones });
     dispatch({ type: "CITY_NAMED", name: detail.name });
     dispatch({ type: "SAVED", name: detail.name, at: Date.now() });
+    stateRef.current = {
+      ...stateRef.current,
+      zones,
+      selectedZoneId: null,
+    };
     void runCalculation(
-      new Map(
-        Object.entries(detail.grid_state).map(([k, v]) => [k, { type: v.type as TileType }])
+      deriveTileMap(
+        new Map(Object.entries(grid).map(([k, v]) => [k, { type: v.type as TileType }])),
+        zones
       ),
       null
     );
@@ -427,6 +592,112 @@ export function useCityPlanner(): CityPlanner {
     void runCalculation(new Map(), null);
   }, [runCalculation]);
 
+  // --- Phase 5 (Day 2): freeform spatial zones ----------------------------
+
+  const recalcDerived = useCallback(() => {
+    void runCalculation(
+      deriveTileMap(stateRef.current.tiles, stateRef.current.zones),
+      null
+    );
+  }, [runCalculation]);
+
+  const setFreeform = useCallback((on: boolean) => {
+    dispatch({ type: "SET_FREEFORM", on });
+  }, []);
+
+  const selectZone = useCallback((id: string | null) => {
+    dispatch({ type: "SELECT_ZONE", id });
+  }, []);
+
+  /** Add a freeform zone and re-score from the derived map. */
+  const addZone = useCallback(
+    (zone: SpatialZone) => {
+      dispatch({ type: "ZONE_ADD", zone });
+      stateRef.current = {
+        ...stateRef.current,
+        zones: [...stateRef.current.zones, zone],
+        selectedZoneId: zone.id,
+      };
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  /** Remove a freeform zone and re-score. */
+  const removeZone = useCallback(
+    (id: string) => {
+      const next = stateRef.current.zones.filter((z) => z.id !== id);
+      stateRef.current = { ...stateRef.current, zones: next, selectedZoneId: null };
+      dispatch({ type: "ZONE_REMOVE", id });
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  /** Live move (drag) — update without pushing an undo entry. */
+  const moveZone = useCallback(
+    (id: string, position: GridPointXY) => {
+      dispatch({ type: "ZONE_MOVE", id, position });
+      stateRef.current = {
+        ...stateRef.current,
+        zones: stateRef.current.zones.map((z) =>
+          z.id === id ? { ...z, position } : z
+        ),
+      };
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  /** Live rotate (R key / handle) — update without an undo entry. */
+  const rotateZone = useCallback(
+    (id: string, rotation: number) => {
+      dispatch({ type: "ZONE_ROTATE", id, rotation });
+      stateRef.current = {
+        ...stateRef.current,
+        zones: stateRef.current.zones.map((z) =>
+          z.id === id ? { ...z, rotation } : z
+        ),
+      };
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  /** Live resize (corner drag) — full zone update without an undo entry. */
+  const resizeZone = useCallback(
+    (zone: SpatialZone) => {
+      dispatch({ type: "ZONE_UPDATE_LIVE", zone });
+      stateRef.current = {
+        ...stateRef.current,
+        zones: stateRef.current.zones.map((z) => (z.id === zone.id ? zone : z)),
+      };
+      void recalcDerived();
+    },
+    [recalcDerived]
+  );
+
+  /** Begin a spatial gesture — snapshot the pre-gesture zones for undo. */
+  const beginSpatialGesture = useCallback(() => {
+    gestureSnapshotRef.current = stateRef.current.zones.map((z) => ({ ...z }));
+  }, []);
+
+  /** Commit an in-progress spatial edit (push the pre-gesture snapshot once). */
+  const commitZones = useCallback(() => {
+    const snapshot = gestureSnapshotRef.current;
+    gestureSnapshotRef.current = null;
+    if (!snapshot) return;
+    dispatch({ type: "SPATIAL_SNAPSHOT", zones: snapshot });
+  }, []);
+
+  const undoZones = useCallback(() => {
+    dispatch({ type: "UNDO" });
+  }, []);
+
+  const redoZones = useCallback(() => {
+    dispatch({ type: "REDO" });
+  }, []);
+
   return {
     state,
     setTool,
@@ -439,6 +710,17 @@ export function useCityPlanner(): CityPlanner {
     loadCity,
     importGis,
     armModel,
+    setFreeform,
+    selectZone,
+    addZone,
+    removeZone,
+    moveZone,
+    rotateZone,
+    resizeZone,
+    beginSpatialGesture,
+    commitZones,
+    undoZones,
+    redoZones,
   };
 }
 

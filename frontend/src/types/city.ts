@@ -98,13 +98,15 @@ export interface LayoutDetail {
   id: string;
   name: string;
   created_at: string | number | null;
-  grid_state: Record<string, { type: number }>;
+  /** Legacy flat tile map, or the v2 wrapper {version, tiles, zones}. */
+  grid_state: Record<string, unknown>;
   tile_count: number;
 }
 
 export interface SaveLayoutRequest {
   name: string;
-  grid_state: Record<string, { type: number }>;
+  /** Legacy flat tile map, or the v2 wrapper {version, tiles, zones}. */
+  grid_state: Record<string, unknown>;
 }
 
 /** User-selectable tools. `select` and `erase` are actions, not tile types. */

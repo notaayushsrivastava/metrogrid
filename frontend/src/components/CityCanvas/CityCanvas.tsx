@@ -33,6 +33,8 @@ import {
   type GridPoint,
 } from "../../utils/coordinates";
 import { buildChunkIndex, chunkKeysInBounds } from "../../utils/chunks";
+import type { SpatialZone } from "../../types/spatial";
+import { SpatialCanvas } from "./SpatialCanvas";
 
 interface CityCanvasProps {
   tiles: GridState;
@@ -43,6 +45,18 @@ interface CityCanvasProps {
   onPlace: (x: number, y: number) => void;
   onHoverChange?: (cell: GridPoint | null) => void;
   onBoundsChange?: (bounds: GridBounds) => void;
+  /* Phase 5 (Day 2): freeform spatial overlay. Omit to disable freeform. */
+  zones?: SpatialZone[];
+  freeformMode?: boolean;
+  selectedZoneId?: string | null;
+  onAddZone?: (world: { x: number; y: number }) => void;
+  onSelectZone?: (id: string | null) => void;
+  onMoveZone?: (id: string, world: { x: number; y: number }) => void;
+  onRotateZone?: (id: string, deg: number) => void;
+  onResizeZone?: (zone: SpatialZone, corner: number, world: { x: number; y: number }) => void;
+  onGestureStart?: () => void;
+  onCommitZones?: () => void;
+  onRemoveZone?: (id: string) => void;
 }
 
 interface Viewport {
@@ -226,6 +240,17 @@ export function CityCanvas({
   onPlace,
   onHoverChange,
   onBoundsChange,
+  zones,
+  freeformMode,
+  selectedZoneId,
+  onAddZone,
+  onSelectZone,
+  onMoveZone,
+  onRotateZone,
+  onResizeZone,
+  onGestureStart,
+  onCommitZones,
+  onRemoveZone,
 }: CityCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -505,6 +530,28 @@ export function CityCanvas({
         }}
         onTouchEnd={() => (pinchRef.current = null)}
       />
+
+      {/* Phase 5 (Day 2): freeform spatial overlay — shares the camera. */}
+      {camera &&
+        (zones ?? []).length >= 0 &&
+        (freeformMode !== undefined || (zones && zones.length > 0)) && (
+        <SpatialCanvas
+          camera={camera}
+          tiles={tiles}
+          zones={zones ?? []}
+          freeformMode={freeformMode ?? false}
+          activeTool={toolActive ? "paint" : "select"}
+          selectedZoneId={selectedZoneId ?? null}
+          onAdd={(world) => onAddZone?.(world)}
+          onSelect={(id) => onSelectZone?.(id)}
+          onMove={(id, world) => onMoveZone?.(id, world)}
+          onRotate={(id, deg) => onRotateZone?.(id, deg)}
+          onResize={(zone, corner, world) => onResizeZone?.(zone, corner, world)}
+          onGestureStart={() => onGestureStart?.()}
+          commitZones={() => onCommitZones?.()}
+          removeZone={(id) => onRemoveZone?.(id)}
+        />
+      )}
 
       {/* Floating local feedback (PRD §11): floats, fades, never blocks input. */}
       {camera &&

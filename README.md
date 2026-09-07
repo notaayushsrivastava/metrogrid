@@ -178,5 +178,12 @@ Roads: `5` Local, `6` Transit, `7` Highway
       canvas with instanced tile meshes + lazy GLTF/GLB loading (error-boundary
       fallback, never corrupts state); `POST /api/assets/upload` → Supabase
       Storage with magic-byte type verification + 25 MB cap; 2D/3D view toggle;
-      model upload + arm-for-placement workflow; 139 backend + 30 frontend tests
+      model upload + arm-for-placement workflow
+- [x] **Phase 5 (Day 2)** — freeform spatial placement (PRD line 495): zones at
+      arbitrary world coordinates with rotation + footprint; pure geometry layer
+      (`utils/spatial.ts`) rasterizes zones into the unchanged scoring engine via
+      `deriveTileMap`; move/rotate/resize handles + Delete; ghost preview with
+      R-to-rotate; amber collision feedback (advisory, never blocking); undo/redo
+      for spatial edits; v2 layout wrapper persists zones without a DB migration;
+      Freeform toggle + Undo/Redo in the tool rail; 150 backend + 44 frontend tests
 - [ ] **Phase 6** — polish, a11y audit, demo seed city

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, lazy, useRef, Suspense, useState } from "react";
-import { MapPlus, Sun, Moon, Grid3x3, Box } from "lucide-react";
+import { MapPlus, Sun, Moon, Grid3x3, Box, Move3D, Undo2, Redo2 } from "lucide-react";
 
 import { CityCanvas } from "./components/CityCanvas/CityCanvas";
 import { Dashboard } from "./components/Dashboard/Dashboard";
@@ -28,7 +28,16 @@ import { toolById } from "./config/tiles";
 import { useTheme } from "./hooks/useTheme";
 import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
+import type { ZoneType } from "./types/spatial";
 import { LandingPage } from "./components/LandingPage/LandingPage";
+
+/** Zone tool → freeform zone type (roads stay grid-authored in Phase 5). */
+const ZONE_TOOL_TYPE: Partial<Record<ToolId, ZoneType>> = {
+  residential: 1,
+  commercial: 2,
+  green: 3,
+  industrial: 5,
+};
 
 // 3D view pulls in three.js + R3F — lazy-load so the initial planner
 // (canvas + scoring) stays lean (PRD Phase 5: 3D must not block the core loop).
@@ -235,6 +244,51 @@ export default function App() {
           {/* Tool rail (desktop) */}
           <aside className="hidden w-52 shrink-0 flex-col gap-4 overflow-y-auto border-r border-border bg-card/40 p-3 md:flex">
             <TilePalette activeTool={state.tool} onSelectTool={setTool} />
+            <div className="flex flex-col gap-1.5 rounded-md border border-border p-2">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-faint">
+                Spatial
+              </p>
+              <div className="flex items-center gap-1.5">
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={state.freeformMode ? "default" : "secondary"}
+                  aria-pressed={state.freeformMode}
+                  onClick={() => planner.setFreeform(!state.freeformMode)}
+                  className="flex-1 justify-start gap-1.5"
+                >
+                  <Move3D className="size-3.5" aria-hidden="true" />
+                  Freeform
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Undo"
+                  title="Undo spatial edit (Ctrl+Z)"
+                  disabled={state.undoStack.length === 0}
+                  onClick={planner.undoZones}
+                >
+                  <Undo2 className="size-4" aria-hidden="true" />
+                </Button>
+                <Button
+                  type="button"
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Redo"
+                  title="Redo spatial edit (Ctrl+Y)"
+                  disabled={state.redoStack.length === 0}
+                  onClick={planner.redoZones}
+                >
+                  <Redo2 className="size-4" aria-hidden="true" />
+                </Button>
+              </div>
+              {state.freeformMode && (
+                <p className="text-[10px] leading-relaxed text-muted-foreground">
+                  Click to place a zone; <kbd className="rounded border border-border px-1 font-mono">R</kbd> rotates the ghost; drag to move, corners to resize.
+                </p>
+              )}
+            </div>
             <ModelUpload
               armedUrl={armedUrl}
               armedName={armedName}
@@ -277,6 +331,29 @@ export default function App() {
                 feedbacks={state.feedbacks}
                 onPlace={placeAt}
                 onBoundsChange={planner.reportBounds}
+                zones={state.zones}
+                freeformMode={state.freeformMode}
+                selectedZoneId={state.selectedZoneId}
+                onAddZone={(world) => {
+                  // Follow the active zone tool (Res/Com/Park/Ind); roads stay
+                  // grid-authored — freeform zones are the four zone types.
+                  const type = ZONE_TOOL_TYPE[state.tool] ?? 1;
+                  planner.addZone({
+                    id: `z${Date.now()}`,
+                    type,
+                    position: { x: world.x, y: world.y },
+                    rotation: 0,
+                    footprint: { width: 3, depth: 3 },
+                    attributes: {},
+                  });
+                }}
+                onSelectZone={(id) => planner.selectZone(id)}
+                onMoveZone={(id, world) => planner.moveZone(id, world)}
+                onRotateZone={(id, deg) => planner.rotateZone(id, deg)}
+                onResizeZone={(zone) => planner.resizeZone(zone)}
+                onGestureStart={planner.beginSpatialGesture}
+                onCommitZones={planner.commitZones}
+                onRemoveZone={planner.removeZone}
               />
             )}
           </main>

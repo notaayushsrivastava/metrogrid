@@ -55,3 +55,41 @@ export type SpatialObject = {
   geometry?: RoadGeometry;
   transform?: ModelTransform;
 };
+
+/* -------------------------------------------------------------------------
+ * Phase 5 (Day 2) — Freeform Spatial Placement (PRD line 495)
+ * -------------------------------------------------------------------------
+ * The sparse grid remains the authoritative *reference* system and the
+ * transport format for scoring, but it is no longer a *restriction*: zones
+ * live at arbitrary world coordinates with arbitrary rotation and footprint.
+ * The clean separation the PRD mandates:
+ *
+ *   logical type  → `type` (drives simulation semantics)
+ *   world position → `position` (float cell-space center)
+ *   footprint      → `footprint` (unsnapped w/d in cell units)
+ *   visual/extra   → `attributes` (name, armed model, …)
+ */
+
+/** Zone types placeable freeform (roads are Phase 6 — freeform road authoring). */
+export type ZoneType = 1 | 2 | 3 | 5;
+
+export interface ZoneAttributes {
+  /** Optional user-facing name. */
+  name?: string;
+  /** Armed 3D model reference carried over from the Phase 5 upload flow. */
+  model_url?: string;
+}
+
+/** A freeform planning zone — the PRD's `SpatialZone` conceptual model. */
+export interface SpatialZone {
+  id: string;
+  type: ZoneType;
+  /** World-space center in cell units (float — never snapped to tile centers). */
+  position: GridPointXY;
+  /** Rotation in degrees, clockwise in canvas space (y-down). */
+  rotation: number;
+  /** Footprint in cell units (float). */
+  footprint: { width: number; depth: number };
+  attributes: ZoneAttributes;
+}
+

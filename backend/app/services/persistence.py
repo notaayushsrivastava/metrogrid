@@ -24,6 +24,13 @@ CITY_PLANS_TABLE = "city_plans"
 # Layout name/size guards (PRD §22.5).
 MAX_NAME_LENGTH = 80
 MAX_GRID_ENTRIES = 200_000
+MAX_ZONES = 5_000
+
+# Phase 5 (Day 2): v2 layout wrapper — {"version": 2, "tiles": {...}, "zones":
+# [...]}. Legacy layouts are flat {"x,y": {"type": n}} maps and keep loading.
+LAYOUT_VERSION = 2
+
+_ZONE_REQUIRED_KEYS = {"id", "type", "position", "rotation", "footprint"}
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -38,8 +45,75 @@ def sanitize_layout_name(name: str) -> str:
     return cleaned
 
 
+def _is_v2_wrapper(grid_state: Any) -> bool:
+    """True when the payload is the v2 wrapper (tiles + zones)."""
+    return (
+        isinstance(grid_state, dict)
+        and "version" in grid_state
+        and "tiles" in grid_state
+        and isinstance(grid_state.get("tiles"), dict)
+    )
+
+
+def validate_zones_payload(zones: Any) -> list[dict[str, Any]]:
+    """Validate the freeform zone list of a v2 layout (PRD Phase 5).
+
+    Zones are spatial presentation/state data — the scoring engine consumes
+    only the derived tile map, so validation is structural (shape + ranges),
+    not semantic.
+    """
+    if not isinstance(zones, list):
+        raise ValueError("zones must be an array")
+    if len(zones) > MAX_ZONES:
+        raise ValueError("zones exceeds the allowed count")
+
+    from app.models.tiles import is_valid_tile_type
+
+    validated: list[dict[str, Any]] = []
+    for i, zone in enumerate(zones):
+        if not isinstance(zone, dict) or not _ZONE_REQUIRED_KEYS.issubset(zone):
+            raise ValueError(f"zones[{i}] is missing required keys")
+        ztype = zone["type"]
+        if not isinstance(ztype, int) or not is_valid_tile_type(ztype) or ztype in (0, 4, 40, 41, 42, 43):
+            raise ValueError(f"zones[{i}] has an unsupported zone type")
+        pos = zone["position"]
+        if not isinstance(pos, dict) or not {"x", "y"}.issubset(pos):
+            raise ValueError(f"zones[{i}] position must be {{x, y}}")
+        fp = zone["footprint"]
+        if not isinstance(fp, dict) or not {"width", "depth"}.issubset(fp):
+            raise ValueError(f"zones[{i}] footprint must be {{width, depth}}")
+        try:
+            px, py = float(pos["x"]), float(pos["y"])
+            w, d = float(fp["width"]), float(fp["depth"])
+            rot = float(zone["rotation"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"zones[{i}] has non-numeric geometry") from exc
+        if not (w > 0 and d > 0) or w > 1000 or d > 1000:
+            raise ValueError(f"zones[{i}] footprint out of range")
+        if not (-2**31 <= px <= 2**31 and -2**31 <= py <= 2**31):
+            raise ValueError(f"zones[{i}] position out of range")
+        validated.append(
+            {
+                "id": str(zone["id"])[:64],
+                "type": int(ztype),
+                "position": {"x": px, "y": py},
+                "rotation": rot,
+                "footprint": {"width": w, "depth": d},
+                "attributes": zone.get("attributes") or {},
+            }
+        )
+    return validated
+
+
 def validate_grid_state_payload(grid_state: Any) -> TileMap:
-    """Validate a serialized sparse tile map from a client/DB payload."""
+    """Validate a serialized sparse tile map from a client/DB payload.
+
+    Accepts both the legacy flat map and the v2 wrapper (validating the
+    inner ``tiles`` object); zones are validated separately via
+    :func:`validate_zones_payload`.
+    """
+    if _is_v2_wrapper(grid_state):
+        grid_state = grid_state["tiles"]
     if not isinstance(grid_state, dict):
         raise ValueError("grid_state must be an object")
     if len(grid_state) > MAX_GRID_ENTRIES:
@@ -115,9 +189,22 @@ class LayoutStore:
     def save_layout(self, name: str, grid_state: dict[str, Any]) -> dict[str, Any]:
         name = sanitize_layout_name(name)
         tiles = validate_grid_state_payload(grid_state)
-        payload_grid = {
-            f"{x},{y}": {"type": t} for (x, y), t in sorted(tiles.items())
-        }
+
+        if _is_v2_wrapper(grid_state):
+            # v2: persist the wrapper as-is (tiles + validated zones) so
+            # freeform spatial state survives save/load (PRD Phase 5).
+            zones = validate_zones_payload(grid_state.get("zones", []))
+            payload_grid: dict[str, Any] = {
+                "version": LAYOUT_VERSION,
+                "tiles": grid_state["tiles"],
+                "zones": zones,
+            }
+        else:
+            zones = []
+            payload_grid = {
+                f"{x},{y}": {"type": t} for (x, y), t in sorted(tiles.items())
+            }
+        tile_count = len(tiles)
 
         if self.storage != "supabase":
             layout_id = f"mem-{int(time.time() * 1000)}"
@@ -143,7 +230,7 @@ class LayoutStore:
             "name": item["name"],
             "created_at": item.get("created_at"),
             "grid_state": saved_grid,
-            "tile_count": len(saved_grid),
+            "tile_count": tile_count,
         }
 
     def load_layout(self, layout_id: str) -> dict[str, Any]:
@@ -165,10 +252,14 @@ class LayoutStore:
             raise KeyError(layout_id)
         item = items[0]
         grid = item.get("grid_state") or {}
+        if _is_v2_wrapper(grid):
+            tile_count = len(grid.get("tiles") or {})
+        else:
+            tile_count = len(grid)
         return {
             "id": item["id"],
             "name": item["name"],
             "created_at": item.get("created_at"),
             "grid_state": grid,
-            "tile_count": len(grid),
+            "tile_count": tile_count,
         }

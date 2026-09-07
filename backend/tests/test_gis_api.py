@@ -7,6 +7,11 @@ from fastapi.testclient import TestClient
 from app import config
 from app.main import app
 from app.services import gis as gis_service
+from app.services.persistence import (
+    LayoutStore,
+    validate_grid_state_payload,
+    validate_zones_payload,
+)
 from app.services.rasterizer import GeoBounds
 
 client = TestClient(app)
@@ -224,6 +229,61 @@ class TestOverpassParsing:
             {"type": "way", "id": 2, "tags": {"waterway": "river"}, "geometry": []},
         ]
         assert gis_service.overpass_elements_to_features(elements) == []
+
+
+class TestV2LayoutWrapper:
+    """Phase 5 (Day 2): freeform zones persist via the v2 layout wrapper."""
+
+    def _v2_payload(self) -> dict:
+        return {
+            "version": 2,
+            "tiles": {"0,0": {"type": 1}},
+            "zones": [
+                {
+                    "id": "z1",
+                    "type": 2,
+                    "position": {"x": 10.5, "y": 12.25},
+                    "rotation": 45.0,
+                    "footprint": {"width": 3.0, "depth": 2.0},
+                    "attributes": {},
+                }
+            ],
+        }
+
+    def test_v2_wrapper_validates_and_yields_tiles(self):
+        tiles = validate_grid_state_payload(self._v2_payload())
+        assert tiles == {(0, 0): 1}
+
+    def test_v2_zones_validate(self):
+        zones = validate_zones_payload(self._v2_payload()["zones"])
+        assert zones[0]["id"] == "z1"
+        assert zones[0]["footprint"]["width"] == 3.0
+
+    def test_v2_zone_rejects_road_type(self):
+        payload = self._v2_payload()
+        payload["zones"][0]["type"] = 41
+        with pytest.raises(ValueError):
+            validate_zones_payload(payload["zones"])
+
+    def test_v2_zone_rejects_bad_geometry(self):
+        payload = self._v2_payload()
+        payload["zones"][0]["footprint"] = {"width": 0, "depth": 2}
+        with pytest.raises(ValueError):
+            validate_zones_payload(payload["zones"])
+
+    def test_legacy_layouts_still_validate(self):
+        tiles = validate_grid_state_payload({"0,0": {"type": 1}})
+        assert tiles == {(0, 0): 1}
+
+    def test_save_roundtrips_zones_through_memory_store(self):
+        store = LayoutStore()
+        row = store.save_layout("V2 City", self._v2_payload())
+        loaded = store.load_layout(row["id"])
+        grid = loaded["grid_state"]
+        assert grid["version"] == 2
+        assert grid["tiles"] == {"0,0": {"type": 1}}
+        assert grid["zones"][0]["id"] == "z1"
+        assert loaded["tile_count"] == 1
 
 
 class TestOverpassMirrorFallback:
