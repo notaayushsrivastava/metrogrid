@@ -38,6 +38,7 @@ interface SpatialCanvasProps {
   selectedZoneId: string | null;
   selectedRoadId?: string | null;
   hideZones?: boolean;
+  snapEnabled?: boolean;
   onAdd: (world: GridPoint) => void;
   onSelect: (id: string | null) => void;
   onMove: (id: string, world: GridPoint) => void;
@@ -52,6 +53,9 @@ interface SpatialCanvasProps {
   onSelectRoad?: (id: string | null) => void;
   onUpdateRoad?: (road: SpatialRoad) => void;
   onRemoveRoad?: (id: string) => void;
+
+  /** Read-only mode for Plan Preview */
+  readOnly?: boolean;
 }
 
 
@@ -171,23 +175,23 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
       );
     }
 
-    // 2. Draw Active Road Creation Polyline Draft
-    if (draftRoadPointsRef.current.length > 0) {
+    // 2. Draw Active Road Creation Polyline Draft (suppressed when readOnly)
+    if (!p.readOnly && draftRoadPointsRef.current.length > 0) {
       drawRoadDraft(ctx, draftRoadPointsRef.current, ghostRef.current, to, size);
     }
 
-    // 2.5 Draw Terrain Brush Preview Circle
-    if (p.activeTool.startsWith("terrain_") && ghostRef.current) {
+    // 2.5 Draw Terrain Brush Preview Circle (suppressed when readOnly)
+    if (!p.readOnly && p.activeTool.startsWith("terrain_") && ghostRef.current) {
       const brushPx = to(ghostRef.current.x, ghostRef.current.y);
       const rPx = (p.terrainRadius ?? 2) * size;
       ctx.save();
       ctx.beginPath();
       ctx.arc(brushPx.px, brushPx.py, rPx, 0, Math.PI * 2);
-      ctx.strokeStyle = p.activeTool === "terrain_raise" ? "#38bdf8" : p.activeTool === "terrain_lower" ? "#f43f5e" : "#a855f7";
+      ctx.strokeStyle = p.activeTool === "terrain_raise" ? "#38bdf8" : p.activeTool === "terrain_lower" ? "#f43f5e" : "#06b6d4";
       ctx.lineWidth = 2;
       ctx.setLineDash([4, 4]);
       ctx.stroke();
-      ctx.fillStyle = p.activeTool === "terrain_raise" ? "rgba(56, 189, 248, 0.15)" : p.activeTool === "terrain_lower" ? "rgba(244, 63, 94, 0.15)" : "rgba(168, 85, 247, 0.15)";
+      ctx.fillStyle = p.activeTool === "terrain_raise" ? "rgba(56, 189, 248, 0.15)" : p.activeTool === "terrain_lower" ? "rgba(244, 63, 94, 0.15)" : "rgba(6, 182, 212, 0.15)";
       ctx.fill();
       ctx.restore();
     }
@@ -200,8 +204,9 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     }
 
 
-    // 4. Ghost Footprint for Zone placement
+    // 4. Ghost Footprint for Zone placement (suppressed when readOnly)
     if (
+      !p.readOnly &&
       p.freeformMode &&
       !isRoadToolActive(p.activeTool) &&
       p.activeTool !== "select" &&
@@ -296,25 +301,38 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
           redraw();
           return;
         }
+        const isSnap = p.snapEnabled !== false;
         if (d.kind === "move") {
-          p.onMove(d.zoneId, { x: world.x - d.offset.x, y: world.y - d.offset.y });
+          const rawX = world.x - d.offset.x;
+          const rawY = world.y - d.offset.y;
+          const x = isSnap ? Math.round(rawX * 2) / 2 : rawX;
+          const y = isSnap ? Math.round(rawY * 2) / 2 : rawY;
+          p.onMove(d.zoneId, { x, y });
         } else if (d.kind === "rotate") {
           const z = zonesRef.current.find((z) => z.id === d.zoneId);
           if (z) {
-            const deg = (Math.atan2(world.y - z.position.y, world.x - z.position.x) * 180) / Math.PI;
+            let deg = (Math.atan2(world.y - z.position.y, world.x - z.position.x) * 180) / Math.PI;
+            if (isSnap) {
+              deg = Math.round(deg / 15) * 15;
+            }
             p.onRotate(d.zoneId, deg);
           }
         } else if (d.kind === "resize") {
           const z = zonesRef.current.find((z) => z.id === d.zoneId);
           if (z) {
-            const resized = resizeFromCorner(z, d.corner, world);
-            p.onResize(resized, d.corner, world);
+            const snappedWorld = isSnap
+              ? { x: Math.round(world.x * 2) / 2, y: Math.round(world.y * 2) / 2 }
+              : world;
+            const resized = resizeFromCorner(z, d.corner, snappedWorld);
+            p.onResize(resized, d.corner, snappedWorld);
           }
         } else if (d.kind === "roadNode") {
           const r = roadsRef.current.find((rd) => rd.id === d.roadId);
           if (r) {
+            const nx = isSnap ? Math.round(world.x * 2) / 2 : world.x;
+            const ny = isSnap ? Math.round(world.y * 2) / 2 : world.y;
             const newPts = [...r.points];
-            newPts[d.nodeIndex] = { x: world.x, y: world.y };
+            newPts[d.nodeIndex] = { x: nx, y: ny };
             p.onUpdateRoad?.({ ...r, points: newPts });
           }
         }
@@ -329,6 +347,7 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     };
 
     const onPointerDown = (ev: PointerEvent) => {
+      if (propsRef.current.readOnly) return;
       if (ev.button !== 0) return; // Only primary click
       const world = worldFromEvent(ev);
       if (!world) return;
@@ -440,6 +459,7 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
     };
 
     const onKeyDown = (ev: KeyboardEvent) => {
+      if (propsRef.current.readOnly) return;
       const p = propsRef.current;
       if (ev.key === "Enter") {
         commitDraftRoad();
@@ -503,7 +523,7 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         top: 0,
         left: 0,
         pointerEvents:
-          props.freeformMode || props.activeTool === "select" || props.activeTool.startsWith("terrain_")
+          !props.readOnly && (props.freeformMode || props.activeTool === "select" || props.activeTool.startsWith("terrain_"))
             ? "auto"
             : "none",
         outline: "none",
@@ -576,7 +596,7 @@ function drawRoad(
 
   if (isTunnel) {
     ctx.setLineDash([8, 6]);
-    ctx.strokeStyle = selected ? "#ffd166" : "#a855f7";
+    ctx.strokeStyle = selected ? "#ffd166" : "#06b6d4";
   } else if (isRamp) {
     ctx.setLineDash([6, 3]);
     ctx.strokeStyle = selected ? "#ffd166" : "#f59e0b";
@@ -605,7 +625,7 @@ function drawRoad(
   });
   ctx.setLineDash([8, 12]);
   ctx.lineDashOffset = -time * 30;
-  ctx.strokeStyle = isTunnel ? "#c084fc" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#7cffb2";
+  ctx.strokeStyle = isTunnel ? "#38bdf8" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#7cffb2";
   ctx.lineWidth = Math.max(1.5, strokeWidthPx * 0.25);
   ctx.stroke();
   ctx.setLineDash([]);
@@ -630,11 +650,11 @@ function drawRoad(
     const textWidth = ctx.measureText(badgeText).width;
     ctx.fillStyle = "rgba(15, 23, 42, 0.85)";
     ctx.fillRect(badgeX - textWidth / 2 - 4, badgeY - 12, textWidth + 8, 14);
-    ctx.strokeStyle = isElevated ? "#38bdf8" : isTunnel ? "#a855f7" : isRamp ? "#f59e0b" : "#64748b";
+    ctx.strokeStyle = isElevated ? "#38bdf8" : isTunnel ? "#06b6d4" : isRamp ? "#f59e0b" : "#64748b";
     ctx.lineWidth = 1;
     ctx.strokeRect(badgeX - textWidth / 2 - 4, badgeY - 12, textWidth + 8, 14);
 
-    ctx.fillStyle = selected ? "#ffd166" : isElevated ? "#38bdf8" : isTunnel ? "#c084fc" : isRamp ? "#fcd34d" : "#e2e8f0";
+    ctx.fillStyle = selected ? "#ffd166" : isElevated ? "#38bdf8" : isTunnel ? "#38bdf8" : isRamp ? "#fcd34d" : "#e2e8f0";
     ctx.fillText(badgeText, badgeX, badgeY);
   }
 

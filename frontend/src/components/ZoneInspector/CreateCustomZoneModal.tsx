@@ -19,9 +19,9 @@ interface CreateCustomZoneModalProps {
 
 const ZONE_OPTIONS: Array<{ type: ZoneType; label: string; color: string }> = [
   { type: 1, label: "Residential", color: "#3b82f6" },
-  { type: 2, label: "Commercial", color: "#eab308" },
+  { type: 2, label: "Commercial", color: "#06b6d4" },
   { type: 3, label: "Park", color: "#22c55e" },
-  { type: 5, label: "Industrial", color: "#a855f7" },
+  { type: 5, label: "Industrial", color: "#f59e0b" },
 ];
 
 export function CreateCustomZoneModal({

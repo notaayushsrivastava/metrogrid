@@ -12,13 +12,23 @@
  */
 
 import { useState, useRef, useEffect, useMemo, createContext, useContext } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrbitControls, TransformControls, Html } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
-import { Eye, EyeOff, Compass, Layers, ArrowDownToLine } from "lucide-react";
+import {
+  EyeOff,
+  Compass,
+  Layers,
+  ArrowDownToLine,
+  Move,
+  RotateCw,
+  Maximize2,
+  Trash2,
+  X,
+} from "lucide-react";
 import type { FreeformZoneMesh } from "../../utils/freeform";
-import { calculatePhysicalFootprint } from "../../utils/freeform";
+import { calculatePhysicalFootprint, DEFAULT_TILE_METER_SIZE } from "../../utils/freeform";
 import type { SpatialRoad, RoadSubtype } from "../../types/spatial";
 import { getRoadLevel, getRoadPointElevation, LEVEL_SHORT_BADGES, getDefaultRoadWidth } from "../../utils/freeformRoads";
 import { TILE_META } from "../../config/tiles";
@@ -44,6 +54,13 @@ interface FreeformCanvas3DProps {
   onRemoveRoad?: (id: string) => void;
   onGestureStart?: () => void;
   onCommitGesture?: () => void;
+  cameraFov?: number;
+  cameraPresetTrigger?: { type: "top" | "iso" | "street" | "reset"; timestamp: number } | null;
+  showGridOverlay?: boolean;
+  snapEnabled?: boolean;
+  hideZones?: boolean;
+  viewCutawayLevel?: number | null;
+  onViewCutawayLevelChange?: (lvl: number | null) => void;
 }
 
 const ZONE_COLOR: Record<number, string> = {
@@ -250,6 +267,7 @@ interface ZoneMeshItemProps {
   onDraggingChange: (dragging: boolean) => void;
   transformMode: "translate" | "rotate" | "scale";
   totalMeshCount: number;
+  snapEnabled?: boolean;
 }
 
 function ZoneMeshItem({
@@ -261,6 +279,7 @@ function ZoneMeshItem({
   onDraggingChange,
   transformMode,
   totalMeshCount,
+  snapEnabled = true,
 }: ZoneMeshItemProps) {
   const lod = useContext(LODContext);
   const meshRef = useRef<THREE.Mesh>(null!);
@@ -381,6 +400,9 @@ function ZoneMeshItem({
           showX={transformMode !== "rotate"}
           showY={transformMode === "rotate"}
           showZ={transformMode !== "rotate"}
+          translationSnap={snapEnabled ? 1.0 : undefined}
+          rotationSnap={snapEnabled ? Math.PI / 12 : undefined}
+          scaleSnap={snapEnabled ? 0.25 : undefined}
         />
       )}
     </>
@@ -495,8 +517,12 @@ function SpatialRoad3DItem({
     <group onClick={(e) => { e.stopPropagation(); onSelect?.(road.id); }}>
       {road.points.slice(0, -1).map((pt1, i) => {
         const pt2 = road.points[i + 1];
-        const dx = pt2.x - pt1.x;
-        const dz = pt2.y - pt1.y;
+        const p1x = pt1.x * DEFAULT_TILE_METER_SIZE;
+        const p1z = pt1.y * DEFAULT_TILE_METER_SIZE;
+        const p2x = pt2.x * DEFAULT_TILE_METER_SIZE;
+        const p2z = pt2.y * DEFAULT_TILE_METER_SIZE;
+        const dx = p2x - p1x;
+        const dz = p2z - p1z;
         const len = Math.hypot(dx, dz);
         if (len === 0) return null;
 
@@ -513,8 +539,8 @@ function SpatialRoad3DItem({
           if (viewCutawayLevel >= 0 && segMaxElev > limitMeters) return null;
         }
 
-        const midX = (pt1.x + pt2.x) / 2;
-        const midZ = (pt1.y + pt2.y) / 2;
+        const midX = (p1x + p2x) / 2;
+        const midZ = (p1z + p2z) / 2;
         const midY = (elev1 + elev2) / 2 + 0.04;
 
         const rotY = -Math.atan2(dz, dx);
@@ -525,10 +551,12 @@ function SpatialRoad3DItem({
         const pillarTValues = len > 28 ? [0.25, 0.5, 0.75] : len > 14 ? [0.33, 0.67] : [0.5];
         const pillars = isElevated && !isSubterraneanMode
           ? pillarTValues.map((t, pIdx) => {
-              const px = pt1.x + t * dx;
-              const pz = pt1.y + t * dz;
+              const px = p1x + t * dx;
+              const pz = p1z + t * dz;
               const deckY = elev1 + t * dy;
-              const groundY = terrain ? (terrain.get(`${Math.round(px)},${Math.round(pz)}`) ?? 0) : 0;
+              const gridPx = Math.round(px / DEFAULT_TILE_METER_SIZE);
+              const gridPz = Math.round(pz / DEFAULT_TILE_METER_SIZE);
+              const groundY = terrain ? (terrain.get(`${gridPx},${gridPz}`) ?? 0) : 0;
               const height = deckY - groundY;
               return { key: pIdx, px, pz, groundY, height };
             }).filter((p) => p.height > 0.8)
@@ -568,11 +596,11 @@ function SpatialRoad3DItem({
                 <>
                   <mesh position={[0, 0.08, road.width / 2 - 0.2]}>
                     <boxGeometry args={[len, isSubterraneanMode ? 0.1 : 0.04, 0.1]} />
-                    <meshBasicMaterial color={isSubterraneanMode ? "#c084fc" : "#a855f7"} />
+                    <meshBasicMaterial color={isSubterraneanMode ? "#38bdf8" : "#06b6d4"} />
                   </mesh>
                   <mesh position={[0, 0.08, -road.width / 2 + 0.2]}>
                     <boxGeometry args={[len, isSubterraneanMode ? 0.1 : 0.04, 0.1]} />
-                    <meshBasicMaterial color={isSubterraneanMode ? "#c084fc" : "#a855f7"} />
+                    <meshBasicMaterial color={isSubterraneanMode ? "#38bdf8" : "#06b6d4"} />
                   </mesh>
                 </>
               )}
@@ -705,10 +733,10 @@ function ElevatedTerrainGround({
         position={[0, 0.03, 0]}
       >
         <meshBasicMaterial
-          color={isSubterranean ? "#c084fc" : "#38bdf8"}
+          color={isSubterranean ? "#38bdf8" : "#38bdf8"}
           wireframe
           transparent
-          opacity={isSubterranean ? 0.28 : 0.18}
+          opacity={isSubterranean ? 0.35 : 0.18}
         />
       </mesh>
 
@@ -726,6 +754,63 @@ function ElevatedTerrainGround({
       )}
     </group>
   );
+}
+
+/** Dynamic FOV Controller inside R3F Canvas */
+function CameraFOVUpdater({ fov }: { fov: number }) {
+  const { camera } = useThree();
+  useEffect(() => {
+    if ("fov" in camera) {
+      (camera as THREE.PerspectiveCamera).fov = fov;
+      camera.updateProjectionMatrix();
+    }
+  }, [camera, fov]);
+  return null;
+}
+
+/** Camera Preset Controller for angle transitions */
+function CameraPresetHandler({
+  presetTrigger,
+  orbitRef,
+}: {
+  presetTrigger?: { type: "top" | "iso" | "street" | "reset"; timestamp: number } | null;
+  orbitRef: React.RefObject<OrbitControlsImpl>;
+}) {
+  const { camera } = useThree();
+
+  useEffect(() => {
+    if (!presetTrigger) return;
+    const controls = orbitRef.current;
+    const { type } = presetTrigger;
+
+    if (type === "top") {
+      camera.position.set(0, 110, 0.01);
+      if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
+    } else if (type === "iso") {
+      camera.position.set(45, 45, 45);
+      if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
+    } else if (type === "street") {
+      camera.position.set(0, 8, 30);
+      if (controls) {
+        controls.target.set(0, 3, 0);
+        controls.update();
+      }
+    } else if (type === "reset") {
+      camera.position.set(0, 40, 50);
+      if (controls) {
+        controls.target.set(0, 0, 0);
+        controls.update();
+      }
+    }
+  }, [presetTrigger, camera, orbitRef]);
+
+  return null;
 }
 
 export function FreeformCanvas3D({
@@ -748,14 +833,19 @@ export function FreeformCanvas3D({
   onRemoveRoad,
   onGestureStart,
   onCommitGesture,
+  cameraFov = 45,
+  cameraPresetTrigger = null,
+  showGridOverlay = true,
+  snapEnabled = true,
+  hideZones = false,
+  viewCutawayLevel = null,
+  onViewCutawayLevelChange,
 }: FreeformCanvas3DProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null!);
   const [transformMode, setTransformMode] = useState<"translate" | "rotate" | "scale">("translate");
-  const [hideZones, setHideZones] = useState(false);
-  const [viewCutawayLevel, setViewCutawayLevel] = useState<number | null>(null);
   const pointerDownPosRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Handle keyboard shortcuts for delete (avoid conflicting with WASD/tool shortcuts)
+  // Handle keyboard shortcuts for delete and transform modes (T, R, S) when zone is selected
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (["INPUT", "TEXTAREA", "SELECT"].includes((e.target as HTMLElement)?.tagName)) return;
@@ -766,11 +856,21 @@ export function FreeformCanvas3D({
         } else if (selectedMeshId) {
           onRemoveMesh(selectedMeshId);
         }
+      } else if (selectedMeshId) {
+        if (e.key === "t" || e.key === "T") {
+          setTransformMode("translate");
+        } else if (e.key === "r" || e.key === "R") {
+          setTransformMode("rotate");
+        } else if (e.key === "s" || e.key === "S") {
+          setTransformMode("scale");
+        } else if (e.key === "Escape") {
+          onSelectMesh(null);
+        }
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [selectedMeshId, selectedRoadId, onRemoveMesh, onRemoveRoad, onSelectRoad]);
+  }, [selectedMeshId, selectedRoadId, onRemoveMesh, onRemoveRoad, onSelectRoad, onSelectMesh]);
 
   const handlePointerDown = (e: React.PointerEvent) => {
     pointerDownPosRef.current = { x: e.clientX, y: e.clientY };
@@ -820,16 +920,16 @@ export function FreeformCanvas3D({
 
     if (isRoad) {
       const roadSubtype = (zoneType as RoadSubtype);
-      const clickX = Math.round(e.point.x * 10) / 10;
-      const clickZ = Math.round(e.point.z * 10) / 10;
+      const clickGridX = Math.round((e.point.x / DEFAULT_TILE_METER_SIZE) * 10) / 10;
+      const clickGridZ = Math.round((e.point.z / DEFAULT_TILE_METER_SIZE) * 10) / 10;
       const roadWidth = getDefaultRoadWidth(roadSubtype);
 
       const newRoad: SpatialRoad = {
         id: `road_${Date.now()}`,
         type: roadSubtype,
         points: [
-          { x: clickX - 10, y: clickZ },
-          { x: clickX + 10, y: clickZ },
+          { x: clickGridX - 1, y: clickGridZ },
+          { x: clickGridX + 1, y: clickGridZ },
         ],
         width: roadWidth,
         level: 0,
@@ -864,7 +964,7 @@ export function FreeformCanvas3D({
     }
     for (const r of roads) {
       for (const p of r.points) {
-        maxExtent = Math.max(maxExtent, Math.abs(p.x), Math.abs(p.y));
+        maxExtent = Math.max(maxExtent, Math.abs(p.x * DEFAULT_TILE_METER_SIZE), Math.abs(p.y * DEFAULT_TILE_METER_SIZE));
       }
     }
     if (terrain && terrain.size > 0) {
@@ -885,108 +985,102 @@ export function FreeformCanvas3D({
   const typesPresent = useMemo(() => Array.from(new Set(meshes.map((m) => m.type))), [meshes]);
   const isSubterraneanMode = viewCutawayLevel !== null && viewCutawayLevel < 0;
   const hideBuildingZones = hideZones || isSubterraneanMode;
+  // Selected mesh entity for contextual transform ribbon
+  const selectedMesh = meshes.find((m) => m.id === selectedMeshId);
 
   return (
     <div className="relative h-full w-full bg-[#0b1120] overflow-hidden select-none">
-      {/* Viewport Toolbar Controls & Controls Guide */}
-      <div className="absolute left-3 top-3 z-10 flex items-center gap-2 rounded-lg border border-border/80 bg-card/90 p-1.5 shadow-xl backdrop-blur">
-        <span className="px-2 font-mono text-xs font-bold uppercase tracking-wider text-muted-foreground">
-          Transform Mode
-        </span>
-        <button
-          type="button"
-          onClick={() => setTransformMode("translate")}
-          className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-            transformMode === "translate"
-              ? "bg-primary text-primary-foreground"
-              : "bg-secondary text-secondary-foreground hover:bg-accent"
-          }`}
-        >
-          Translate (T)
-        </button>
-        <button
-          type="button"
-          onClick={() => setTransformMode("rotate")}
-          className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-            transformMode === "rotate"
-              ? "bg-primary text-primary-foreground"
-              : "bg-secondary text-secondary-foreground hover:bg-accent"
-          }`}
-        >
-          Rotate Y (R)
-        </button>
-        <button
-          type="button"
-          onClick={() => setTransformMode("scale")}
-          className={`rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-            transformMode === "scale"
-              ? "bg-primary text-primary-foreground"
-              : "bg-secondary text-secondary-foreground hover:bg-accent"
-          }`}
-        >
-          Resize XZ (S)
-        </button>
+      {/* Contextual Transform Ribbon: Displayed at bottom ONLY when a zone is selected */}
+      {selectedMesh && (
+        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-2 rounded-xl border border-sky-500/40 bg-card/95 px-3.5 py-2 shadow-2xl backdrop-blur-md mg-rise select-none">
+          {/* Selected Zone Pill */}
+          <div className="flex items-center gap-2 border-r border-border pr-3">
+            <span
+              className="h-3 w-3 rounded-full shadow-sm ring-2 ring-background"
+              style={{ backgroundColor: ZONE_COLOR[selectedMesh.type] ?? "#94a3b8" }}
+            />
+            <div className="flex flex-col">
+              <span className="font-mono text-xs font-bold text-foreground">
+                {ZONE_LABEL[selectedMesh.type] ?? "Selected Zone"}
+              </span>
+              <span className="font-mono text-[10px] text-muted-foreground">
+                {selectedMesh.footprint.width.toFixed(1)}m × {selectedMesh.footprint.depth.toFixed(1)}m
+              </span>
+            </div>
+          </div>
 
-        <div className="mx-1 h-4 w-[1px] bg-border" />
+          {/* Transform Mode Buttons */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setTransformMode("translate")}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                transformMode === "translate"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-secondary text-secondary-foreground hover:bg-accent"
+              }`}
+              title="Translate mode: Drag object across ground plane (T)"
+            >
+              <Move className="size-3.5" />
+              <span>Translate</span>
+              <kbd className="text-[10px] font-mono opacity-70">T</kbd>
+            </button>
 
-        {/* Level Cutaway View Controls (View Under Map / Hide Above Level) */}
-        <div className="flex items-center gap-1 rounded bg-secondary/80 p-0.5">
-          <Layers className="size-3.5 text-muted-foreground ml-1" />
-          <button
-            type="button"
-            onClick={() => setViewCutawayLevel(null)}
-            className={`rounded px-2 py-0.5 text-xs font-semibold transition-colors ${
-              viewCutawayLevel === null
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-            title="Show all elevation levels (flyovers, surface, and subterranean)"
-          >
-            All Levels
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewCutawayLevel(0)}
-            className={`rounded px-2 py-0.5 text-xs font-semibold transition-colors ${
-              viewCutawayLevel === 0
-                ? "bg-primary text-primary-foreground"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-            title="Hide elevated bridges and flyovers to inspect surface & ground level"
-          >
-            L0 & Below
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewCutawayLevel(-1)}
-            className={`flex items-center gap-1 rounded px-2.5 py-0.5 text-xs font-semibold transition-colors ${
-              viewCutawayLevel === -1
-                ? "bg-metro-blue text-slate-950 shadow-sm"
-                : "text-muted-foreground hover:text-foreground hover:bg-accent"
-            }`}
-            title="View under the map: hides surface structures and turns ground transparent to view subterranean tunnels & underpasses"
-          >
-            <ArrowDownToLine className="size-3" />
-            <span>Subterranean (View Under Map)</span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setTransformMode("rotate")}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                transformMode === "rotate"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-secondary text-secondary-foreground hover:bg-accent"
+              }`}
+              title="Rotate mode: Rotate around Y axis (R)"
+            >
+              <RotateCw className="size-3.5" />
+              <span>Rotate Y</span>
+              <kbd className="text-[10px] font-mono opacity-70">R</kbd>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setTransformMode("scale")}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-xs font-semibold transition-all ${
+                transformMode === "scale"
+                  ? "bg-primary text-primary-foreground shadow-sm"
+                  : "bg-secondary text-secondary-foreground hover:bg-accent"
+              }`}
+              title="Resize mode: Scale footprint width and length (S)"
+            >
+              <Maximize2 className="size-3.5" />
+              <span>Resize XZ</span>
+              <kbd className="text-[10px] font-mono opacity-70">S</kbd>
+            </button>
+          </div>
+
+          <div className="mx-1 h-4 w-[1px] bg-border" />
+
+          {/* Quick Actions */}
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => onRemoveMesh(selectedMesh.id)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-rose-400 hover:bg-rose-500/15 transition-colors"
+              title="Delete selected zone (Del / Backspace)"
+            >
+              <Trash2 className="size-3.5" />
+              <span>Delete</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => onSelectMesh(null)}
+              className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+              title="Deselect (Esc)"
+            >
+              <X className="size-3.5" />
+            </button>
+          </div>
         </div>
-
-        <div className="mx-1 h-4 w-[1px] bg-border" />
-
-        <button
-          type="button"
-          onClick={() => setHideZones((h) => !h)}
-          className={`flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-semibold transition-colors ${
-            hideZones
-              ? "bg-amber-500/25 text-amber-300 border border-amber-500/40"
-              : "bg-secondary text-secondary-foreground hover:bg-accent"
-          }`}
-          title="Toggle hiding zones to view street and traffic flow layout"
-        >
-          {hideZones ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}
-          <span>{hideZones ? "Zones Hidden (Street View)" : "Hide Zones"}</span>
-        </button>
-      </div>
+      )}
 
       <div className="absolute left-3 bottom-3 z-10 flex items-center gap-2 rounded-md border border-border/70 bg-card/85 px-2.5 py-1 font-mono text-[10px] text-muted-foreground shadow-md backdrop-blur">
         <Compass className="size-3 text-primary animate-spin-slow" />
@@ -1004,13 +1098,15 @@ export function FreeformCanvas3D({
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-metro-blue/50 bg-slate-950/90 px-4 py-1.5 font-mono text-xs font-semibold text-metro-blue shadow-2xl backdrop-blur-md">
           <ArrowDownToLine className="size-3.5 text-metro-blue animate-bounce" />
           <span>Subterranean View Active • Underpasses & Tunnels Visible Under Map</span>
-          <button
-            type="button"
-            onClick={() => setViewCutawayLevel(null)}
-            className="ml-2 rounded bg-metro-blue/20 px-2 py-0.5 text-[10px] font-bold text-metro-blue hover:bg-metro-blue/30 transition-colors"
-          >
-            Reset to All
-          </button>
+          {onViewCutawayLevelChange && (
+            <button
+              type="button"
+              onClick={() => onViewCutawayLevelChange(null)}
+              className="ml-2 rounded bg-metro-blue/20 px-2 py-0.5 text-[10px] font-bold text-metro-blue hover:bg-metro-blue/30 transition-colors"
+            >
+              Reset to All
+            </button>
+          )}
         </div>
       )}
 
@@ -1018,13 +1114,15 @@ export function FreeformCanvas3D({
         <div className="absolute top-14 left-1/2 -translate-x-1/2 z-10 flex items-center gap-2 rounded-full border border-blue-500/50 bg-slate-900/90 px-4 py-1.5 font-mono text-xs font-semibold text-blue-200 shadow-2xl backdrop-blur-md">
           <Layers className="size-3.5 text-blue-400" />
           <span>Surface Cutaway Active • Elevated Flyovers Hidden</span>
-          <button
-            type="button"
-            onClick={() => setViewCutawayLevel(null)}
-            className="ml-2 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-200 hover:bg-slate-700 transition-colors"
-          >
-            Reset
-          </button>
+          {onViewCutawayLevelChange && (
+            <button
+              type="button"
+              onClick={() => onViewCutawayLevelChange(null)}
+              className="ml-2 rounded bg-slate-800 px-2 py-0.5 text-[10px] font-bold text-slate-200 hover:bg-slate-700 transition-colors"
+            >
+              Reset
+            </button>
+          )}
         </div>
       )}
 
@@ -1035,7 +1133,7 @@ export function FreeformCanvas3D({
       </div>
 
       <Canvas
-        camera={{ position: [0, 40, 50], fov: 45 }}
+        camera={{ position: [0, 40, 50], fov: cameraFov }}
         shadows={!isLargeMap && !isSubterraneanMode}
         onPointerDown={(e) => {
           handlePointerDown(e);
@@ -1045,6 +1143,8 @@ export function FreeformCanvas3D({
           }
         }}
       >
+        <CameraFOVUpdater fov={cameraFov} />
+        <CameraPresetHandler presetTrigger={cameraPresetTrigger} orbitRef={orbitRef} />
         <LODTracker>
           {() => (
             <>
@@ -1057,10 +1157,12 @@ export function FreeformCanvas3D({
                 shadow-mapSize-width={1024}
                 shadow-mapSize-height={1024}
               />
-              <gridHelper
-                args={[dynamicGridSize, Math.floor(dynamicGridSize / 5), isSubterraneanMode ? "#a855f7" : "#38bdf8", "#1e293b"]}
-                position={[0, 0, 0]}
-              />
+              {showGridOverlay && (
+                <gridHelper
+                  args={[dynamicGridSize, Math.floor(dynamicGridSize / 5), isSubterraneanMode ? "#06b6d4" : "#38bdf8", "#1e293b"]}
+                  position={[0, 0, 0]}
+                />
+              )}
 
               {/* Dynamically elevated terrain ground and contour grid */}
               <ElevatedTerrainGround
@@ -1110,6 +1212,7 @@ export function FreeformCanvas3D({
                         }}
                         transformMode={transformMode}
                         totalMeshCount={meshes.length}
+                        snapEnabled={snapEnabled}
                       />
                     )}
                   </>
@@ -1130,6 +1233,7 @@ export function FreeformCanvas3D({
                       }}
                       transformMode={transformMode}
                       totalMeshCount={meshes.length}
+                      snapEnabled={snapEnabled}
                     />
                   ))
                 )

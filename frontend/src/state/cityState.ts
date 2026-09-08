@@ -699,20 +699,31 @@ export function useCityPlanner(): CityPlanner {
 
       const hasNewSpatial = importedZones.length > 0 || importedRoads.length > 0;
 
+      // When vector spatial_roads are imported, prevent duplicate raster road blocks in state.tiles
+      let targetTiles = merged;
+      if (importedRoads.length > 0) {
+        targetTiles = new Map(stateRef.current.tiles);
+        for (const [k, v] of merged.entries()) {
+          if (v.type !== 4 && v.type !== 40 && v.type !== 41 && v.type !== 42 && v.type !== 43) {
+            targetTiles.set(k, v);
+          }
+        }
+      }
+
       if (added > 0 || hasNewSpatial) {
         const newZones = [...stateRef.current.zones, ...importedZones];
         const newRoads = [...stateRef.current.roads, ...importedRoads];
-        const next = { ...stateRef.current, tiles: merged, zones: newZones, roads: newRoads };
+        const next = { ...stateRef.current, tiles: targetTiles, zones: newZones, roads: newRoads };
         stateRef.current = next;
         dispatch({
           type: "IMPORT_MERGED",
-          tiles: merged,
+          tiles: targetTiles,
           zones: importedZones,
           roads: importedRoads,
         });
       }
-      // Re-score after import (no latest action → no local delta).
-      void runCalculation(added > 0 ? merged : new Map(stateRef.current.tiles), null);
+      // Re-score after import with merged grid so scoring calculation captures network connectivity
+      void runCalculation(merged, null);
       return { imported: response.tiles_imported, added: added + importedRoads.length + importedZones.length };
     },
     [runCalculation]

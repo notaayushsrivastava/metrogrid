@@ -131,7 +131,7 @@ export const TOOLS: ToolMeta[] = [
   { id: "road_highway", label: "Highway", places: TILE.ROAD_HIGHWAY, key: "7", glyph: "≣", color: "#ffd166", icon: "rocket", group: "roads" },
   { id: "terrain_raise", label: "Raise", places: null, key: "T", glyph: "▲", color: "#38bdf8", icon: "mountain", group: "terrain" },
   { id: "terrain_lower", label: "Lower", places: null, key: "G", glyph: "▼", color: "#f43f5e", icon: "arrow-down", group: "terrain" },
-  { id: "terrain_smooth", label: "Smooth", places: null, key: "H", glyph: "≈", color: "#a855f7", icon: "waves", group: "terrain" },
+  { id: "terrain_smooth", label: "Smooth", places: null, key: "H", glyph: "≈", color: "#06b6d4", icon: "waves", group: "terrain" },
 ];
 
 export const TOOL_GROUPS: { id: ToolMeta["group"]; label: string; marker: string }[] = [

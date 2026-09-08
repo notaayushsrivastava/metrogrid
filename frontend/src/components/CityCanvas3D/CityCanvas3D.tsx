@@ -21,6 +21,7 @@ interface CityCanvas3DProps {
   activeTool: string;
   onSelect?: (x: number, y: number) => void;
   presentationCamera?: PresentationCameraState;
+  cameraFov?: number;
 }
 
 export interface PresentationCameraState {
@@ -46,7 +47,7 @@ function PresentationCamera({ view }: { view: PresentationCameraState }) {
   return null;
 }
 
-export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera }: CityCanvas3DProps) {
+export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera, cameraFov = 45 }: CityCanvas3DProps) {
   const { theme } = useTheme();
   const dark = theme === "dark";
 
@@ -54,7 +55,7 @@ export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera }
   return (
     <Canvas
       dpr={[1, 2]}
-      camera={{ position: [30, 28, 30], fov: 45, near: 0.1, far: 400 }}
+      camera={{ position: [30, 28, 30], fov: cameraFov, near: 0.1, far: 400 }}
       gl={{ antialias: true, alpha: true }}
       style={{ background: "transparent" }}
     >

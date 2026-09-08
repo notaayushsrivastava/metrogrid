@@ -1,9 +1,9 @@
 /**
  * ZoneInspectorPanel — compact contextual inspector for editing zone attributes
- * (PRD Phase 7 — Zone Attributes and Existing-Zone Editing).
+ * and geometry (PRD Phase 7 — Zone Attributes and Existing-Zone Editing).
  *
- * Rendered as a compact, floating non-blocking card overlay so planners can
- * select any zone in 2D or 3D view and edit attributes without blocking the grid.
+ * Rendered as a compact, floating non-blocking sidebar card overlay so planners can
+ * select any zone in 2D or 3D view and transform (move, rotate, resize) and edit attributes.
  */
 
 import { useEffect, useState } from "react";
@@ -12,7 +12,20 @@ import { zoneColor, zoneLabel } from "../../utils/spatial";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { Building2, Layers, RotateCw, Trash2, Sliders, Hash, ArrowUpDown, X } from "lucide-react";
+import {
+  Building2,
+  Layers,
+  RotateCw,
+  RotateCcw,
+  Trash2,
+  Sliders,
+  Hash,
+  ArrowUpDown,
+  X,
+  Move,
+  Maximize2,
+  Compass,
+} from "lucide-react";
 
 interface ZoneInspectorPanelProps {
   zone: SpatialZone | null;
@@ -24,9 +37,18 @@ interface ZoneInspectorPanelProps {
 
 const ZONE_OPTIONS: Array<{ type: ZoneType; label: string; color: string }> = [
   { type: 1, label: "Residential", color: "#3b82f6" },
-  { type: 2, label: "Commercial", color: "#eab308" },
+  { type: 2, label: "Commercial", color: "#06b6d4" },
   { type: 3, label: "Park", color: "#22c55e" },
-  { type: 5, label: "Industrial", color: "#a855f7" },
+  { type: 5, label: "Industrial", color: "#f59e0b" },
+];
+
+const ROTATION_PRESETS = [0, 45, 90, 180, 270];
+const SIZE_PRESETS = [
+  { label: "1×1", w: 1, d: 1 },
+  { label: "2×2", w: 2, d: 2 },
+  { label: "3×3", w: 3, d: 3 },
+  { label: "4×4", w: 4, d: 4 },
+  { label: "6×4", w: 6, d: 4 },
 ];
 
 export function ZoneInspectorPanel({
@@ -38,6 +60,8 @@ export function ZoneInspectorPanel({
 }: ZoneInspectorPanelProps) {
   const [name, setName] = useState("");
   const [type, setType] = useState<ZoneType>(1);
+  const [posX, setPosX] = useState(0);
+  const [posY, setPosY] = useState(0);
   const [floors, setFloors] = useState(1);
   const [density, setDensity] = useState(1.0);
   const [intensity, setIntensity] = useState(1.0);
@@ -51,12 +75,14 @@ export function ZoneInspectorPanel({
     if (zone) {
       setName(zone.attributes?.name ?? zoneLabel(zone.type));
       setType(zone.type);
+      setPosX(Math.round(zone.position.x * 10) / 10);
+      setPosY(Math.round(zone.position.y * 10) / 10);
       setFloors(zone.type === 3 ? 0 : zone.attributes?.floors ?? (zone.type === 1 ? 4 : zone.type === 2 ? 6 : 5));
       setDensity(zone.attributes?.density ?? 1.0);
       setIntensity(zone.attributes?.developmentIntensity ?? 1.0);
       setWidth(Math.round(zone.footprint.width * 10) / 10);
       setDepth(Math.round(zone.footprint.depth * 10) / 10);
-      setRotation(Math.round(zone.rotation));
+      setRotation(Math.round(zone.rotation) % 360);
       setModelUrl(zone.attributes?.modelUrl ?? zone.attributes?.model_url ?? "");
     }
   }, [zone]);
@@ -66,6 +92,8 @@ export function ZoneInspectorPanel({
   const handleApply = (updates: Partial<{
     name: string;
     type: ZoneType;
+    posX: number;
+    posY: number;
     floors: number;
     density: number;
     intensity: number;
@@ -76,18 +104,23 @@ export function ZoneInspectorPanel({
   }>) => {
     const nextType = updates.type ?? type;
     const nextName = updates.name ?? name;
+    const nextPosX = updates.posX ?? posX;
+    const nextPosY = updates.posY ?? posY;
     const isPark = nextType === 3;
     const nextFloors = isPark ? 0 : (updates.floors ?? (floors === 0 ? 4 : floors));
     const nextDensity = updates.density ?? density;
     const nextIntensity = updates.intensity ?? intensity;
     const nextWidth = updates.width ?? width;
     const nextDepth = updates.depth ?? depth;
-    const nextRotation = updates.rotation ?? rotation;
+    let nextRotation = updates.rotation ?? rotation;
+    while (nextRotation < 0) nextRotation += 360;
+    nextRotation = nextRotation % 360;
     const nextModelUrl = updates.modelUrl ?? modelUrl;
 
     const updatedZone: SpatialZone = {
       ...zone,
       type: nextType,
+      position: { x: nextPosX, y: nextPosY },
       rotation: nextRotation,
       footprint: { width: Math.max(0.5, nextWidth), depth: Math.max(0.5, nextDepth) },
       attributes: {
@@ -105,8 +138,32 @@ export function ZoneInspectorPanel({
     onUpdateZone(updatedZone);
   };
 
+  const handleNudgePosition = (dx: number, dy: number) => {
+    const nx = Math.round((posX + dx) * 10) / 10;
+    const ny = Math.round((posY + dy) * 10) / 10;
+    setPosX(nx);
+    setPosY(ny);
+    handleApply({ posX: nx, posY: ny });
+  };
+
+  const handleNudgeRotation = (delta: number) => {
+    let nextRot = (rotation + delta) % 360;
+    if (nextRot < 0) nextRot += 360;
+    setRotation(nextRot);
+    handleApply({ rotation: nextRot });
+  };
+
+  const handleNudgeSize = (dw: number, dd: number) => {
+    const nw = Math.max(0.5, Math.round((width + dw) * 10) / 10);
+    const nd = Math.max(0.5, Math.round((depth + dd) * 10) / 10);
+    setWidth(nw);
+    setDepth(nd);
+    handleApply({ width: nw, depth: nd });
+  };
+
   return (
     <div className="absolute top-16 right-4 z-30 w-80 max-h-[calc(100vh-5rem)] overflow-y-auto rounded-xl border border-border/80 bg-card/95 p-4 shadow-2xl backdrop-blur-md select-none mg-rise">
+      {/* Header */}
       <div className="flex items-center justify-between gap-2 border-b border-border/60 pb-2.5">
         <div className="flex items-center gap-2">
           <Building2 className="size-4 text-primary" aria-hidden="true" />
@@ -133,7 +190,7 @@ export function ZoneInspectorPanel({
         </div>
       </div>
 
-      <div className="mt-3 space-y-3 text-xs">
+      <div className="mt-3 space-y-3.5 text-xs">
         {/* Zone Name */}
         <div className="space-y-1">
           <label className="font-semibold text-muted-foreground flex items-center gap-1.5">
@@ -177,6 +234,271 @@ export function ZoneInspectorPanel({
               >
                 <span className="size-2 rounded-full" style={{ backgroundColor: opt.color }} />
                 <span>{opt.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* =========================================================================
+            SECTION: TRANSFORM (POSITION X / Z)
+            ========================================================================= */}
+        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+          <div className="flex items-center justify-between">
+            <label className="font-semibold text-foreground flex items-center gap-1.5">
+              <Move className="size-3.5 text-primary" />
+              Position (X, Z Coordinates)
+            </label>
+            <span className="font-mono text-[10px] text-muted-foreground">
+              {posX}m, {posY}m
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                <span>X Position (m)</span>
+                <div className="flex gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudgePosition(-1, 0)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="Nudge X -1m"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNudgePosition(1, 0)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="Nudge X +1m"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+              <Input
+                type="number"
+                step="0.5"
+                value={posX}
+                onChange={(e) => {
+                  const val = Number.parseFloat(e.target.value) || 0;
+                  setPosX(val);
+                  handleApply({ posX: val });
+                }}
+                className="h-7 font-mono text-xs bg-background"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                <span>Z Position (m)</span>
+                <div className="flex gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudgePosition(0, -1)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="Nudge Z -1m"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNudgePosition(0, 1)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="Nudge Z +1m"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+              <Input
+                type="number"
+                step="0.5"
+                value={posY}
+                onChange={(e) => {
+                  const val = Number.parseFloat(e.target.value) || 0;
+                  setPosY(val);
+                  handleApply({ posY: val });
+                }}
+                className="h-7 font-mono text-xs bg-background"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* =========================================================================
+            SECTION: ROTATE & ORIENTATION
+            ========================================================================= */}
+        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+          <div className="flex items-center justify-between">
+            <label className="font-semibold text-foreground flex items-center gap-1.5">
+              <Compass className="size-3.5 text-primary" />
+              Rotation & Orientation
+            </label>
+            <div className="flex items-center gap-1 font-mono text-xs font-bold text-primary">
+              <span>{rotation}°</span>
+              <div className="flex gap-0.5 ml-1">
+                <button
+                  type="button"
+                  onClick={() => handleNudgeRotation(-15)}
+                  className="rounded p-0.5 bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground"
+                  title="Rotate -15°"
+                >
+                  <RotateCcw className="size-2.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNudgeRotation(15)}
+                  className="rounded p-0.5 bg-secondary hover:bg-accent text-muted-foreground hover:text-foreground"
+                  title="Rotate +15°"
+                >
+                  <RotateCw className="size-2.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <input
+            type="range"
+            min={0}
+            max={355}
+            step={5}
+            value={rotation}
+            onChange={(e) => {
+              const val = Number.parseInt(e.target.value, 10) || 0;
+              setRotation(val);
+              handleApply({ rotation: val });
+            }}
+            className="w-full h-1.5 bg-secondary rounded-lg appearance-none cursor-pointer accent-primary"
+          />
+
+          {/* Quick Rotation Angle Presets */}
+          <div className="grid grid-cols-5 gap-1 pt-0.5">
+            {ROTATION_PRESETS.map((deg) => (
+              <button
+                key={deg}
+                type="button"
+                onClick={() => {
+                  setRotation(deg);
+                  handleApply({ rotation: deg });
+                }}
+                className={`rounded py-0.5 font-mono text-[10px] font-semibold transition-colors border ${
+                  rotation === deg
+                    ? "border-primary bg-primary/20 text-primary font-bold shadow-xs"
+                    : "border-border/60 bg-secondary/40 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {deg}°
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* =========================================================================
+            SECTION: RESIZE & FOOTPRINT DIMENSIONS
+            ========================================================================= */}
+        <div className="space-y-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
+          <div className="flex items-center justify-between">
+            <label className="font-semibold text-foreground flex items-center gap-1.5">
+              <Maximize2 className="size-3.5 text-primary" />
+              Footprint & Resizing
+            </label>
+            <span className="font-mono text-xs font-bold text-primary">
+              {width}m × {depth}m ({(width * depth).toFixed(0)}m²)
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                <span>Width (m)</span>
+                <div className="flex gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudgeSize(-1, 0)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="-1m Width"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNudgeSize(1, 0)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="+1m Width"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+              <Input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="50"
+                value={width}
+                onChange={(e) => {
+                  const val = Number.parseFloat(e.target.value) || 1;
+                  setWidth(val);
+                  handleApply({ width: val });
+                }}
+                className="h-7 font-mono text-xs bg-background"
+              />
+            </div>
+            <div className="space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                <span>Depth (m)</span>
+                <div className="flex gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => handleNudgeSize(0, -1)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="-1m Depth"
+                  >
+                    -1
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleNudgeSize(0, 1)}
+                    className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
+                    title="+1m Depth"
+                  >
+                    +1
+                  </button>
+                </div>
+              </div>
+              <Input
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="50"
+                value={depth}
+                onChange={(e) => {
+                  const val = Number.parseFloat(e.target.value) || 1;
+                  setDepth(val);
+                  handleApply({ depth: val });
+                }}
+                className="h-7 font-mono text-xs bg-background"
+              />
+            </div>
+          </div>
+
+          {/* Quick Footprint Presets */}
+          <div className="grid grid-cols-5 gap-1 pt-0.5">
+            {SIZE_PRESETS.map((preset) => (
+              <button
+                key={preset.label}
+                type="button"
+                onClick={() => {
+                  setWidth(preset.w);
+                  setDepth(preset.d);
+                  handleApply({ width: preset.w, depth: preset.d });
+                }}
+                className={`rounded py-0.5 font-mono text-[10px] font-semibold transition-colors border ${
+                  width === preset.w && depth === preset.d
+                    ? "border-primary bg-primary/20 text-primary font-bold shadow-xs"
+                    : "border-border/60 bg-secondary/40 text-muted-foreground hover:bg-secondary hover:text-foreground"
+                }`}
+              >
+                {preset.label}
               </button>
             ))}
           </div>
@@ -262,57 +584,6 @@ export function ZoneInspectorPanel({
                 handleApply({ intensity: val });
               }}
               className="h-8 font-mono text-xs bg-background"
-            />
-          </div>
-        </div>
-
-        {/* Footprint Dimensions & Rotation */}
-        <div className="grid grid-cols-3 gap-2 rounded-lg border border-border/60 bg-muted/20 p-2.5">
-          <div className="space-y-1">
-            <label className="font-mono text-[10px] text-muted-foreground">Width (m)</label>
-            <Input
-              type="number"
-              step="0.5"
-              min="1"
-              value={width}
-              onChange={(e) => {
-                const val = Number.parseFloat(e.target.value) || 1;
-                setWidth(val);
-                handleApply({ width: val });
-              }}
-              className="h-7 font-mono text-xs bg-background"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="font-mono text-[10px] text-muted-foreground">Depth (m)</label>
-            <Input
-              type="number"
-              step="0.5"
-              min="1"
-              value={depth}
-              onChange={(e) => {
-                const val = Number.parseFloat(e.target.value) || 1;
-                setDepth(val);
-                handleApply({ depth: val });
-              }}
-              className="h-7 font-mono text-xs bg-background"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="font-mono text-[10px] text-muted-foreground flex items-center gap-1">
-              <RotateCw className="size-2.5" />
-              Angle (°)
-            </label>
-            <Input
-              type="number"
-              step="5"
-              value={rotation}
-              onChange={(e) => {
-                const val = Number.parseInt(e.target.value, 10) || 0;
-                setRotation(val);
-                handleApply({ rotation: val });
-              }}
-              className="h-7 font-mono text-xs bg-background"
             />
           </div>
         </div>

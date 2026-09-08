@@ -322,6 +322,22 @@ def _stroke_polyline(
 from app.models.gis import GisSpatialRoad, GisSpatialRoadPoint, GisSpatialZone
 
 
+def lonlat_to_grid_float(
+    lon: float,
+    lat: float,
+    bounds: GeoBounds,
+    origin: tuple[int, int],
+    span_x: int,
+    span_y: int,
+) -> tuple[float, float]:
+    """Convert (lon, lat) to floating-point grid coordinates relative to origin."""
+    fx = (lon - bounds.west) / (bounds.east - bounds.west) if bounds.east != bounds.west else 0.0
+    fy = (bounds.north - lat) / (bounds.north - bounds.south) if bounds.north != bounds.south else 0.0
+    gx = origin[0] + fx * span_x
+    gy = origin[1] + fy * span_y
+    return gx, gy
+
+
 def lonlat_to_meters(
     lon: float,
     lat: float,
@@ -403,15 +419,15 @@ _ROAD_WIDTH_MAP = {
 def _extract_spatial_road(
     road_id: str,
     tile_type: int,
-    meter_points: list[tuple[float, float]],
+    grid_points: list[tuple[float, float]],
     level: int = 0,
     elevation: float = 0.0,
     is_ramp: bool = False,
 ) -> GisSpatialRoad | None:
-    if len(meter_points) < 2:
+    if len(grid_points) < 2:
         return None
 
-    pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2), z=round(elevation, 2)) for x, y in meter_points]
+    pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2), z=round(elevation, 2)) for x, y in grid_points]
     width = _ROAD_WIDTH_MAP.get(tile_type, 8.0)
 
     return GisSpatialRoad(
@@ -467,8 +483,8 @@ def rasterize_features(
                 cells, span_x, span_y, rel, feature.tile_type, thickness
             )
 
-        meter_pts = [
-            lonlat_to_meters(lon, lat, bounds, origin, span_x, span_y)
+        grid_pts = [
+            lonlat_to_grid_float(lon, lat, bounds, origin, span_x, span_y)
             for lon, lat in feature.points
         ]
         if feature.layer == LAYER_ROAD and not feature.closed:
@@ -476,7 +492,7 @@ def rasterize_features(
             sr = _extract_spatial_road(
                 f"gis-road-{road_idx}",
                 feature.tile_type,
-                meter_pts,
+                grid_pts,
                 level=feature.level,
                 elevation=feature.elevation,
                 is_ramp=feature.is_ramp,
@@ -504,6 +520,7 @@ __all__ = [
     "classify_road_level_and_ramp",
     "grid_span",
     "lonlat_to_grid",
+    "lonlat_to_grid_float",
     "lonlat_to_meters",
     "rasterize_features",
 ]

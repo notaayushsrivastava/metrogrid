@@ -709,7 +709,7 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
 
   const legendItems = [
     { color: "#38bdf8", code: "RES-01", label: "Residential Zone" },
-    { color: "#a855f7", code: "COM-02", label: "Commercial Zone" },
+    { color: "#06b6d4", code: "COM-02", label: "Commercial Zone" },
     { color: "#4ade80", code: "PRK-03", label: "Park & Public Green" },
     { color: "#f97316", code: "IND-05", label: "Industrial & Heavy" },
     { color: "#fbbf24", code: "TRN-42", label: "Transit / Highway Grid" },

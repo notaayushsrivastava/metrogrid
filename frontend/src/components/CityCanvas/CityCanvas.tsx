@@ -75,6 +75,8 @@ interface CityCanvasProps {
   onUpdateRoad?: (road: import("../../types/spatial").SpatialRoad) => void;
   onRemoveRoad?: (id: string) => void;
   activeTool?: string;
+  snapEnabled?: boolean;
+  readOnly?: boolean;
 }
 
 interface Viewport {
@@ -359,6 +361,8 @@ export function CityCanvas({
   onUpdateRoad,
   onRemoveRoad,
   activeTool,
+  snapEnabled = true,
+  readOnly = false,
 }: CityCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -382,8 +386,10 @@ export function CityCanvas({
   const pinchRef = useRef<{ dist: number; camera: Camera } | null>(null);
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
-  const toolActiveRef = useRef(toolActive);
-  toolActiveRef.current = toolActive;
+  const toolActiveRef = useRef(toolActive && !readOnly);
+  toolActiveRef.current = toolActive && !readOnly;
+  const readOnlyRef = useRef(readOnly);
+  readOnlyRef.current = readOnly;
   const cameraRef = useRef<Camera | null>(null);
   cameraRef.current = camera;
   const onBoundsRef = useRef(onBoundsChange);
@@ -492,9 +498,9 @@ export function CityCanvas({
       }
     }
 
-    // Draw Ctrl+Drag Rectangle Selection Preview
+    // Draw Ctrl+Drag Rectangle Selection Preview (suppressed when readOnly)
     const drag = dragRef.current;
-    if (drag && drag.mode === "rect" && rectStartRef.current && hoverRef.current) {
+    if (!readOnlyRef.current && drag && drag.mode === "rect" && rectStartRef.current && hoverRef.current) {
       const p1 = rectStartRef.current;
       const p2 = hoverRef.current;
       const minX = Math.min(p1.x, p2.x);
@@ -516,7 +522,7 @@ export function CityCanvas({
       ctx.setLineDash([]);
     }
 
-    if (hover && toolActiveRef.current) {
+    if (!readOnlyRef.current && hover && toolActiveRef.current) {
       const { px, py } = cellToScreenPx(cam, hover.x, hover.y);
       ctx.strokeStyle = hoverColor;
       ctx.lineWidth = 2;
@@ -651,7 +657,7 @@ export function CityCanvas({
           if (!cameraRef.current) return;
           e.preventDefault();
 
-          if ((e.ctrlKey || e.metaKey) && toolActiveRef.current) {
+          if (!readOnly && (e.ctrlKey || e.metaKey) && toolActiveRef.current) {
             const cell = pointerToGrid(e.clientX, e.clientY);
             if (cell) {
               dragRef.current = {
@@ -668,6 +674,7 @@ export function CityCanvas({
           }
 
           const panIntent =
+            readOnly ||
             e.button === 1 ||
             e.button === 2 ||
             spaceRef.current ||
@@ -707,13 +714,13 @@ export function CityCanvas({
             drag.lastY = e.clientY;
             if (drag.mode === "pan") {
               setCamera(panBy(cam, dx, dy));
-            } else if (drag.mode === "paint" && !spaceRef.current) {
+            } else if (!readOnly && drag.mode === "paint" && !spaceRef.current) {
               const cell = pointerToGrid(e.clientX, e.clientY);
               if (cell && !drag.placed.has(tileKey(cell.x, cell.y))) {
                 drag.placed.add(tileKey(cell.x, cell.y));
                 onPlace(cell.x, cell.y);
               }
-            } else if (drag.mode === "rect") {
+            } else if (!readOnly && drag.mode === "rect") {
               const cell = pointerToGrid(e.clientX, e.clientY);
               if (cell) {
                 setHover(cell);
@@ -722,14 +729,16 @@ export function CityCanvas({
             }
             return;
           }
-          const cell = pointerToGrid(e.clientX, e.clientY);
-          setHover(cell);
-          onHoverChange?.(cell);
+          if (!readOnly) {
+            const cell = pointerToGrid(e.clientX, e.clientY);
+            setHover(cell);
+            onHoverChange?.(cell);
+          }
         }}
         onPointerUp={(e) => {
           const drag = dragRef.current;
           if (drag && drag.pointerId === e.pointerId) {
-            if (drag.mode === "rect" && rectStartRef.current) {
+            if (!readOnly && drag.mode === "rect" && rectStartRef.current) {
               const start = rectStartRef.current;
               const end = pointerToGrid(e.clientX, e.clientY) ?? hover;
               if (end) {
@@ -746,11 +755,13 @@ export function CityCanvas({
             }
             dragRef.current = null;
             rectStartRef.current = null;
+            setCursor("grab");
           }
         }}
         onPointerCancel={() => {
           dragRef.current = null;
           rectStartRef.current = null;
+          setCursor("grab");
         }}
         onPointerLeave={() => {
           setHover(null);
@@ -825,6 +836,8 @@ export function CityCanvas({
           onSelectRoad={(id) => onSelectRoad?.(id)}
           onUpdateRoad={(road) => onUpdateRoad?.(road)}
           onRemoveRoad={(id) => onRemoveRoad?.(id)}
+          snapEnabled={snapEnabled}
+          readOnly={readOnly}
         />
       )}
 
