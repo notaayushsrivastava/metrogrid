@@ -158,6 +158,13 @@ GIS_TILE_METERS = 30.0
 MIN_GRID_SPAN = 4
 MAX_GRID_SPAN = 100
 
+# GIS road-width scaling: spatial roads keep full real-world widths (mapped
+# against the 30 m tile scale) on dense imports, but the scale decreases
+# linearly down to half (30 → 15 m equivalent) when the imported grid has
+# few tiles, so roads stay proportionate to small extracts.
+GIS_ROAD_WIDTH_SCALE_TILES = 30.0  # tiles across the larger axis for full scale
+GIS_ROAD_WIDTH_SCALE_MIN = 0.5     # scale floor (30 m → 15 m equivalent)
+
 GIS_WIDE_ROAD_TYPES = frozenset({ROAD_AVENUE, ROAD_HIGHWAY})
 
 MAX_IMPORTED_TILES = 40_000

@@ -416,6 +416,27 @@ _ROAD_WIDTH_MAP = {
 }
 
 
+def road_width_scale(span_x: int, span_y: int) -> float:
+    """Deterministic width scale for spatial roads from an import's grid span.
+
+    Dense imports (>= ``config.GIS_ROAD_WIDTH_SCALE_TILES`` tiles across the
+    larger axis) keep full real-world widths (scale 1.0, the 30 m tile
+    scale). Sparse imports shrink linearly down to
+    ``config.GIS_ROAD_WIDTH_SCALE_MIN`` (30 -> 15 m equivalent) at the minimum
+    grid span, so roads stay proportionate when the tiles are smaller in
+    number.
+    """
+    span = max(span_x, span_y, config.MIN_GRID_SPAN)
+    lo = config.GIS_ROAD_WIDTH_SCALE_MIN
+    hi = 1.0
+    if span >= config.GIS_ROAD_WIDTH_SCALE_TILES:
+        return hi
+    t = (span - config.MIN_GRID_SPAN) / max(
+        1.0, config.GIS_ROAD_WIDTH_SCALE_TILES - config.MIN_GRID_SPAN
+    )
+    return round(lo + (hi - lo) * t, 4)
+
+
 def _extract_spatial_road(
     road_id: str,
     tile_type: int,
@@ -423,12 +444,13 @@ def _extract_spatial_road(
     level: int = 0,
     elevation: float = 0.0,
     is_ramp: bool = False,
+    width_scale: float = 1.0,
 ) -> GisSpatialRoad | None:
     if len(grid_points) < 2:
         return None
 
     pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2), z=round(elevation, 2)) for x, y in grid_points]
-    width = _ROAD_WIDTH_MAP.get(tile_type, 8.0)
+    width = round(_ROAD_WIDTH_MAP.get(tile_type, 8.0) * width_scale, 2)
 
     return GisSpatialRoad(
         id=road_id,
@@ -461,6 +483,7 @@ def rasterize_features(
     ``config.MAX_IMPORTED_TILES``.
     """
     span_x, span_y = grid_span(bounds)
+    width_scale = road_width_scale(span_x, span_y)
     rel: dict[tuple[int, int], int] = {}
     spatial_zones: list[GisSpatialZone] = []
     spatial_roads: list[GisSpatialRoad] = []
@@ -496,6 +519,7 @@ def rasterize_features(
                 level=feature.level,
                 elevation=feature.elevation,
                 is_ramp=feature.is_ramp,
+                width_scale=width_scale,
             )
             if sr:
                 spatial_roads.append(sr)
@@ -522,5 +546,6 @@ __all__ = [
     "lonlat_to_grid",
     "lonlat_to_grid_float",
     "lonlat_to_meters",
+    "road_width_scale",
     "rasterize_features",
 ]

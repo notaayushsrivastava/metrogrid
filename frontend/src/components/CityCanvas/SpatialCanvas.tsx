@@ -10,7 +10,7 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { cellSize, cellToScreenPx, screenToGrid, type Camera, type GridPoint } from "../../utils/coordinates";
-import { zoneColor, zoneLabel, zoneOverlaps, resizeFromCorner, deg2rad } from "../../utils/spatial";
+import { zoneColor, zoneLabel, zoneOverlaps, resizeFromCorner, deg2rad, pointInZone } from "../../utils/spatial";
 import { DEFAULT_TILE_METER_SIZE } from "../../utils/freeform";
 import type { GridState } from "../../types/city";
 import type { SpatialZone, SpatialRoad, SpatialRoadPoint, RoadSubtype } from "../../types/spatial";
@@ -362,6 +362,39 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         p.onEditTerrain?.({ x: world.x, y: world.y }, mode, p.terrainRadius ?? 2, p.terrainStrength ?? 1.0);
         dragRef.current = { kind: "terrain" };
         redraw();
+        return;
+      }
+
+      // 0b. Erase tool: remove the freeform object (road or zone) under the
+      //     cursor. Without this the erase tool only cleared grid tiles and
+      //     ignored freeform roads/zones entirely.
+      if (p.activeTool === "erase") {
+        for (const road of roadsRef.current) {
+          for (let i = 0; i < road.points.length - 1; i++) {
+            const p1 = road.points[i];
+            const p2 = road.points[i + 1];
+            const dist = Math.abs(
+              (p2.y - p1.y) * world.x - (p2.x - p1.x) * world.y + p2.x * p1.y - p2.y * p1.x
+            ) / Math.hypot(p2.y - p1.y, p2.x - p1.x);
+            if (dist < (road.width / 10.0) + 0.5) {
+              p.onRemoveRoad?.(road.id);
+              p.onSelectRoad?.(null);
+              redraw();
+              return;
+            }
+          }
+        }
+        const hitZone = zonesRef.current.find(
+          (z) =>
+            pointInZone(z, world.x, world.y) ||
+            (Math.abs(z.position.x - world.x) < 0.5 && Math.abs(z.position.y - world.y) < 0.5)
+        );
+        if (hitZone) {
+          p.removeZone(hitZone.id);
+          p.onSelect(null);
+          redraw();
+          return;
+        }
         return;
       }
 

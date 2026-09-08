@@ -13,6 +13,7 @@ from app.services.rasterizer import (
     grid_span,
     lonlat_to_grid,
     rasterize_features,
+    road_width_scale,
 )
 
 BOUNDS = GeoBounds(north=12.98, south=12.97, east=80.25, west=80.24)
@@ -233,3 +234,47 @@ class TestRasterization:
         ]
         tiles, *_ = rasterize_features(features, BOUNDS, ORIGIN)
         assert len(tiles) <= 5
+
+
+def _road_feature(lon_lat_points, tile_type=41, closed=False):
+    return _feature(LAYER_ROAD, tile_type, lon_lat_points, closed=closed)
+
+
+class TestRoadWidthScaling:
+    """Spatial road widths should shrink on sparse imports (few tiles)."""
+
+    def test_scale_full_at_and_above_threshold(self):
+        assert road_width_scale(30, 20) == 1.0
+        assert road_width_scale(100, 100) == 1.0
+        assert road_width_scale(30, 30) == 1.0
+
+    def test_scale_minimum_on_tiny_grid(self):
+        # Below the threshold the scale ramps down to the floor.
+        assert road_width_scale(1, 1) == config.GIS_ROAD_WIDTH_SCALE_MIN
+        assert road_width_scale(4, 4) == config.GIS_ROAD_WIDTH_SCALE_MIN
+
+    def test_scale_monotone_with_span(self):
+        small = road_width_scale(5, 5)
+        mid = road_width_scale(15, 15)
+        full = road_width_scale(60, 60)
+        assert small <= mid <= full
+        assert small < full
+
+    def test_dense_import_keeps_full_road_width(self):
+        # BOUNDS is a 0.01° box → clamped dense span → scale 1.0.
+        feature = _road_feature(((80.24, 12.98), (80.25, 12.98)), tile_type=43)
+        *_, roads = rasterize_features([feature], BOUNDS, ORIGIN)
+        assert roads
+        assert roads[0].width == 16.0  # highway, full scale
+
+    def test_sparse_import_scales_road_width_down(self, monkeypatch):
+        # Raise the full-scale threshold above the actual grid span so the
+        # import is treated as sparse and widths shrink below real-world size.
+        monkeypatch.setattr(config, "GIS_ROAD_WIDTH_SCALE_TILES", 1000.0)
+        feature = _road_feature(((80.24, 12.98), (80.25, 12.98)), tile_type=43)
+        span_x, span_y = grid_span(BOUNDS)
+        expected_scale = road_width_scale(span_x, span_y)
+        *_, roads = rasterize_features([feature], BOUNDS, ORIGIN)
+        assert roads
+        assert roads[0].width == round(16.0 * expected_scale, 2)
+        assert roads[0].width < 16.0

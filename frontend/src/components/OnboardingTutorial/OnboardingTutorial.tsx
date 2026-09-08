@@ -230,16 +230,23 @@ export function OnboardingTutorial({ open, onFinish }: OnboardingTutorialProps) 
     Math.max(targetCx - bubbleLeft - 6, 18),
     Math.max(18, bubbleW - 30)
   );
+  // Choose the side (below vs above) with the most room, then clamp the
+  // bubble fully inside the viewport. The old "rect.top < EST_H" rule forced
+  // full-height targets (e.g. the canvas) off the bottom of the screen.
+  const estH = BUBBLE_EST_H;
+  const minTop = BUBBLE_MARGIN;
+  const maxTop = Math.max(minTop, viewport.h - estH - BUBBLE_MARGIN);
   const spaceBelow = rect ? viewport.h - (rect.top + rect.height) : viewport.h;
-  const placeBelow = rect ? spaceBelow >= BUBBLE_EST_H || rect.top < BUBBLE_EST_H : false;
+  const spaceAbove = rect ? rect.top : viewport.h;
+  const placeBelow = rect ? spaceBelow >= spaceAbove : false;
+  const rawTop = rect
+    ? placeBelow
+      ? rect.top + rect.height + 18
+      : rect.top - 18 - estH
+    : viewport.h / 2 - estH / 2;
+  const bubbleTop = Math.min(Math.max(rawTop, minTop), maxTop);
   const bubbleStyle: React.CSSProperties = rect
-    ? {
-        left: bubbleLeft,
-        width: bubbleW,
-        ...(placeBelow
-          ? { top: rect.top + rect.height + 18 }
-          : { bottom: viewport.h - rect.top + 18 }),
-      }
+    ? { left: bubbleLeft, width: bubbleW, top: bubbleTop }
     : {
         left: bubbleLeft,
         width: bubbleW,

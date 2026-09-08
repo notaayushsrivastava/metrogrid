@@ -1,11 +1,12 @@
 """Tests for the scoring engine (PRD §25.1 #3, #4, #5, #9 + local delta §11)."""
 
 from app import config
-from app.models.requests import LatestAction
+from app.models.requests import LatestAction, SpatialZonePayload
 from app.services.scoring import (
     compute_local_delta,
     compute_raw_scores,
     compute_scores,
+    freeform_livability_pair_factors,
     normalize_score,
 )
 from app.services.sparse import TileMap
@@ -196,87 +197,89 @@ class TestLocalDelta:
 
 
 class TestFreeformAreaScoring:
-    def test_freeform_scoring_scales_livability_by_green_square_meterage(self):
+    """Freeform livability is proximity-based (PRD §9.3, §9.4), matching the
+    grid pair counts — not total square meterage."""
+
+    def _zone(self, zid, ztype, x, y, area=100.0, attrs=None):
         from app.models.requests import Footprint, SpatialZonePayload
 
-        small_green = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2", type=config.GREEN, position={"x": 10, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-        ]
-        large_green = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2", type=config.GREEN, position={"x": 10, "y": 0}, footprint=Footprint(width=30, depth=30), area=900.0
-            ),
-        ]
+        return SpatialZonePayload(
+            id=zid,
+            type=ztype,
+            position={"x": x, "y": y},
+            footprint=Footprint(width=10, depth=10),
+            area=area,
+            attributes=attrs,
+        )
 
-        scores_small = compute_scores({}, zones=small_green, is_freeform=True)
-        scores_large = compute_scores({}, zones=large_green, is_freeform=True)
+    def test_green_bonus_is_proximity_based(self):
+        # Two green zones within GREEN_RADIUS (Manhattan ≤ 3) of the residential
+        # zone each add the bonus; a distant green adds nothing.
+        inside = [
+            self._zone("r", config.RESIDENTIAL, 0, 0),
+            self._zone("g1", config.GREEN, 2, 0),
+            self._zone("g2", config.GREEN, 0, 3),
+            self._zone("g_far", config.GREEN, 50, 50),
+        ]
+        scores_inside = compute_scores({}, zones=inside, is_freeform=True)
+        assert (
+            scores_inside["livability"]
+            == config.LIVABILITY_BASE + 2 * config.GREEN_BONUS
+        )
 
-        assert scores_large["livability"] > scores_small["livability"]
+    def test_industrial_penalty_is_proximity_based(self):
+        # The user-facing bug: a factory far from any residential zone must NOT
+        # dent livability. Only industrial zones within INDUSTRIAL_RADIUS
+        # (Manhattan ≤ 4) of a residential zone apply the penalty.
+        far_factory = [
+            self._zone("r", config.RESIDENTIAL, 0, 0),
+            self._zone("i_far", config.INDUSTRIAL, 50, 50),
+        ]
+        near_factory = [
+            self._zone("r", config.RESIDENTIAL, 0, 0),
+            self._zone("i_near", config.INDUSTRIAL, 3, 0),
+        ]
+        scores_far = compute_scores({}, zones=far_factory, is_freeform=True)
+        scores_near = compute_scores({}, zones=near_factory, is_freeform=True)
+
+        assert scores_far["livability"] == config.LIVABILITY_BASE
+        assert (
+            scores_near["livability"]
+            == config.LIVABILITY_BASE - config.INDUSTRIAL_PENALTY
+        )
+
+    def test_green_and_industrial_near_residential_stack(self):
+        zones = [
+            self._zone("r", config.RESIDENTIAL, 0, 0),
+            self._zone("g", config.GREEN, 1, 0),      # within GREEN_RADIUS
+            self._zone("i", config.INDUSTRIAL, 2, 0),  # within INDUSTRIAL_RADIUS
+        ]
+        scores = compute_scores({}, zones=zones, is_freeform=True)
+        assert (
+            scores["livability"]
+            == config.LIVABILITY_BASE + config.GREEN_BONUS - config.INDUSTRIAL_PENALTY
+        )
 
     def test_freeform_scoring_scales_resources_by_commercial_square_meterage(self):
-        from app.models.requests import Footprint, SpatialZonePayload
-
         small_com = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2", type=config.COMMERCIAL, position={"x": 10, "y": 0}, footprint=Footprint(width=5, depth=5), area=25.0
-            ),
+            self._zone("r", config.RESIDENTIAL, 0, 0, area=100.0),
+            self._zone("c", config.COMMERCIAL, 10, 0, area=25.0),
         ]
         large_com = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2", type=config.COMMERCIAL, position={"x": 10, "y": 0}, footprint=Footprint(width=20, depth=20), area=400.0
-            ),
+            self._zone("r", config.RESIDENTIAL, 0, 0, area=100.0),
+            self._zone("c", config.COMMERCIAL, 10, 0, area=400.0),
         ]
-
         scores_small = compute_scores({}, zones=small_com, is_freeform=True)
         scores_large = compute_scores({}, zones=large_com, is_freeform=True)
-
         assert scores_large["resources"] > scores_small["resources"]
 
-    def test_freeform_scoring_scales_by_zone_attributes(self):
-        from app.models.requests import Footprint, SpatialZonePayload
-
-        single_floor_green = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2",
-                type=config.GREEN,
-                position={"x": 10, "y": 0},
-                footprint=Footprint(width=10, depth=10),
-                area=100.0,
-                attributes={"floors": 1, "density": 1.0},
-            ),
+    def test_freeform_pair_factors_helper(self):
+        zones = [
+            self._zone("r", config.RESIDENTIAL, 0, 0),
+            self._zone("g", config.GREEN, 1, 0),
+            self._zone("i_near", config.INDUSTRIAL, 2, 0),
+            self._zone("i_far", config.INDUSTRIAL, 100, 100),
         ]
-        multi_floor_green = [
-            SpatialZonePayload(
-                id="z1", type=config.RESIDENTIAL, position={"x": 0, "y": 0}, footprint=Footprint(width=10, depth=10), area=100.0
-            ),
-            SpatialZonePayload(
-                id="z2",
-                type=config.GREEN,
-                position={"x": 10, "y": 0},
-                footprint=Footprint(width=10, depth=10),
-                area=100.0,
-                attributes={"floors": 10, "density": 2.0},
-            ),
-        ]
-
-        scores_base = compute_scores({}, zones=single_floor_green, is_freeform=True)
-        scores_multi = compute_scores({}, zones=multi_floor_green, is_freeform=True)
-
-        assert scores_multi["livability"] > scores_base["livability"]
+        green_factor, ind_factor = freeform_livability_pair_factors(zones)
+        assert green_factor == 1.0
+        assert ind_factor == 1.0

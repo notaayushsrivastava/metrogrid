@@ -14,9 +14,10 @@ import {
   getRoadElevation,
   LEVEL_NAMES,
   LEVEL_ELEVATION_METERS,
+  rotateRoadAroundCenter,
 } from "../../utils/freeformRoads";
 import { Button } from "../ui/button";
-import { Trash2, Scissors, X, Layers, ArrowUpRight } from "lucide-react";
+import { Trash2, Scissors, X, Layers, ArrowUpRight, RotateCw, RotateCcw } from "lucide-react";
 
 interface RoadInspectorPanelProps {
   road: SpatialRoad;
@@ -104,6 +105,31 @@ export function RoadInspectorPanel({
       });
     }
   };
+
+  // Translate (move) the whole road by a delta in grid cells.
+  const nudge = (dx: number, dy: number) => {
+    onUpdate({
+      ...road,
+      points: road.points.map((pt) => ({ x: pt.x + dx, y: pt.y + dy, z: pt.z })),
+    });
+  };
+
+  // Rotate the road around its centroid.
+  const rotateBy = (deg: number) => {
+    onUpdate(rotateRoadAroundCenter(road, deg));
+  };
+
+  // Road centroid (for display).
+  const centroid = (() => {
+    if (!road.points.length) return { x: 0, y: 0 };
+    let sx = 0;
+    let sy = 0;
+    for (const pt of road.points) {
+      sx += pt.x;
+      sy += pt.y;
+    }
+    return { x: sx / road.points.length, y: sy / road.points.length };
+  })();
 
   return (
     <div
@@ -234,6 +260,66 @@ export function RoadInspectorPanel({
             onChange={handleElevationChange}
             className="w-full accent-sky-400 bg-slate-800 rounded-lg cursor-pointer h-2"
           />
+        </div>
+
+        {/* Transform: translate (move) + rotate the whole road */}
+        <div>
+          <div className="flex items-center justify-between mb-1.5">
+            <label className="text-slate-300 font-semibold">Transform</label>
+            <span className="font-mono text-[10px] text-slate-400">
+              center {centroid.x.toFixed(1)}, {centroid.y.toFixed(1)}
+            </span>
+          </div>
+          <div className="grid grid-cols-3 gap-1.5">
+            <button
+              type="button"
+              onClick={() => nudge(0, -1)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Move up"
+            >
+              <ArrowUpRight className="h-3 w-3 rotate-90" />
+            </button>
+            <button
+              type="button"
+              onClick={() => rotateBy(-15)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Rotate -15°"
+            >
+              <RotateCcw className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => nudge(0, 1)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Move down"
+            >
+              <ArrowUpRight className="h-3 w-3 -rotate-90" />
+            </button>
+            <button
+              type="button"
+              onClick={() => nudge(-1, 0)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Move left"
+            >
+              <ArrowUpRight className="h-3 w-3 rotate-180" />
+            </button>
+            <button
+              type="button"
+              onClick={() => rotateBy(15)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Rotate +15°"
+            >
+              <RotateCw className="h-3 w-3" />
+            </button>
+            <button
+              type="button"
+              onClick={() => nudge(1, 0)}
+              className="flex items-center justify-center rounded border border-slate-700 bg-slate-800/70 py-1.5 text-slate-200 hover:bg-slate-700"
+              title="Move right"
+            >
+              <ArrowUpRight className="h-3 w-3" />
+            </button>
+          </div>
         </div>
 
         {/* Road Subtype Picker */}

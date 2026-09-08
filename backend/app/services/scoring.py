@@ -7,6 +7,7 @@ import math
 from app import config
 from app.models.requests import LatestAction, SpatialRoadPayload, SpatialZonePayload
 from app.services import resources, traffic
+from app.services.geometry import within_manhattan_radius
 from app.services.sparse import TileMap
 
 
@@ -41,6 +42,43 @@ def rasterize_freeform_roads_to_tiles(
                     for dy in range(thickness):
                         merged[(cx + dx, cy + dy)] = r.type
     return merged
+
+
+def freeform_livability_pair_factors(
+    zones: list[SpatialZonePayload] | None,
+) -> tuple[float, float]:
+    """Proximity-based green / industrial pair factors for freeform zones.
+
+    Mirrors the grid ``resources`` pair counts (PRD §9.3, §9.4) but over freeform
+    zone centres: a green zone only helps, and an industrial zone only hurts,
+    residential zones within the configured Manhattan radius. Without this,
+    freeform livability would be driven by total industrial *area* — penalising
+    a factory on the far side of the map exactly the same as one next door.
+    """
+    green_factor = 0.0
+    ind_factor = 0.0
+    if not zones:
+        return green_factor, ind_factor
+
+    residential = [z for z in zones if z.type == config.RESIDENTIAL]
+    if not residential:
+        return green_factor, ind_factor
+
+    for zone in zones:
+        if zone.type not in (config.GREEN, config.INDUSTRIAL):
+            continue
+        zx = int(round(zone.position.get("x", 0)))
+        zy = int(round(zone.position.get("y", 0)))
+        radius = config.GREEN_RADIUS if zone.type == config.GREEN else config.INDUSTRIAL_RADIUS
+        for res in residential:
+            rx = int(round(res.position.get("x", 0)))
+            ry = int(round(res.position.get("y", 0)))
+            if within_manhattan_radius(zx, zy, rx, ry, radius):
+                if zone.type == config.GREEN:
+                    green_factor += 1.0
+                else:
+                    ind_factor += 1.0
+    return green_factor, ind_factor
 
 
 def compute_freeform_raw_scores(
@@ -104,9 +142,15 @@ def compute_freeform_raw_scores(
                 if elev >= config.ELEVATION_SCENIC_THRESHOLD:
                     scenic_bonus += config.SCENIC_VIEW_BONUS
 
-    # 1. Livability: scaled by green & industrial square meterage + terrain scenic view bonus
-    green_factor = green_area / BASELINE_TILE_AREA
-    ind_factor = ind_area / BASELINE_TILE_AREA
+    # 1. Livability: green spaces help and industrial zones hurt only the
+    #    residential zones near them (PRD §9.3, §9.4). When zones are present we
+    #    count proximity pairs; without zones we fall back to the tile area so
+    #    the grid/tiles-only path still has a sane baseline.
+    if zones:
+        green_factor, ind_factor = freeform_livability_pair_factors(zones)
+    else:
+        green_factor = green_area / BASELINE_TILE_AREA
+        ind_factor = ind_area / BASELINE_TILE_AREA
     livability = (
         config.LIVABILITY_BASE
         + config.GREEN_BONUS * green_factor
