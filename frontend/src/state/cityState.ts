@@ -767,10 +767,14 @@ export function useCityPlanner(): CityPlanner {
     [recalcDerived]
   );
 
-  /** Remove a freeform zone and re-score. */
+  /** Remove a freeform zone and re-score. Tolerates legacy `mesh_`-prefixed
+   *  ids produced by earlier builds so DB-loaded zones always delete. */
   const removeZone = useCallback(
     (id: string) => {
-      const next = stateRef.current.zones.filter((z) => z.id !== id);
+      const bare = id.replace(/^mesh_/, "");
+      const matches = (zoneId: string) =>
+        zoneId === id || zoneId === bare || zoneId === `mesh_${id}`;
+      const next = stateRef.current.zones.filter((z) => !matches(z.id));
       stateRef.current = { ...stateRef.current, zones: next, selectedZoneId: null };
       dispatch({ type: "ZONE_REMOVE", id });
       void recalcDerived();

@@ -10,7 +10,7 @@
  * 6. Power User Command Palette (Cmd+K / Ctrl+K) & Shortcuts Modal
  */
 
-import { useEffect, lazy, useRef, Suspense, useState, useMemo } from "react";
+import { useEffect, lazy, useCallback, useRef, Suspense, useState, useMemo } from "react";
 import { Grid3x3, Move3D, Search, Keyboard } from "lucide-react";
 import { exportArchitecturalBlueprint } from "./utils/blueprintExport";
 
@@ -36,6 +36,11 @@ import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
 import type { ZoneType, TerrainEditMode } from "./types/spatial";
 import { LandingPage } from "./components/LandingPage/LandingPage";
+import {
+  OnboardingTutorial,
+  shouldShowOnboarding,
+  markOnboardingComplete,
+} from "./components/OnboardingTutorial/OnboardingTutorial";
 
 /** Zone tool → freeform zone type (roads stay grid-authored in Phase 5). */
 const ZONE_TOOL_TYPE: Partial<Record<ToolId, ZoneType>> = {
@@ -111,6 +116,34 @@ export default function App() {
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [customZoneOpen, setCustomZoneOpen] = useState(false);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
+
+  // Show the onboarding tutorial when the planner was entered from the
+  // landing page (index URL) and the user has never completed it. Can also
+  // be forced with `?onboarding` or replayed from the command palette.
+  const onboardingCheckedRef = useRef(false);
+  useEffect(() => {
+    if (onboardingCheckedRef.current) return;
+    onboardingCheckedRef.current = true;
+    const forced = new URLSearchParams(window.location.search).get("t") === "1";
+    let fromIndex = false;
+    try {
+      const referrer = new URL(document.referrer);
+      fromIndex =
+        referrer.origin === window.location.origin &&
+        (referrer.pathname === "/" || referrer.pathname === "/index.html");
+    } catch {
+      fromIndex = false;
+    }
+    if (forced || (fromIndex && shouldShowOnboarding())) {
+      setOnboardingOpen(true);
+    }
+  }, []);
+
+  const finishOnboarding = useCallback(() => {
+    markOnboardingComplete();
+    setOnboardingOpen(false);
+  }, []);
 
   // Viewport & Mode states
   const [view3d, setView3d] = useState(false);
@@ -281,7 +314,7 @@ export default function App() {
           </div>
 
           {/* Center: Primary View Switcher Pill */}
-          <div className="flex items-center rounded-lg border border-border bg-secondary/50 p-0.5 text-xs shadow-inner">
+          <div data-tour="view3d" className="flex items-center rounded-lg border border-border bg-secondary/50 p-0.5 text-xs shadow-inner">
             <button
               type="button"
               onClick={() => {
@@ -342,7 +375,7 @@ export default function App() {
             </div>
 
             {/* Dashboard Score Chips */}
-            <div className="hidden lg:block">
+            <div data-tour="scores" className="hidden lg:block">
               <Dashboard
                 scores={state.scores}
                 movement={state.movement}
@@ -353,7 +386,8 @@ export default function App() {
             </div>
 
             {/* Project Contextual Actions Menu */}
-            <ProjectMenu
+            <span data-tour="project" className="inline-flex">
+              <ProjectMenu
               planner={planner}
               onOpenGis={() => setGisOpen(true)}
               onOpenClear={() => setClearOpen(true)}
@@ -364,7 +398,8 @@ export default function App() {
                 setArmedName(name);
                 armModel(url);
               }}
-            />
+              />
+            </span>
 
             {/* Command Palette Trigger */}
             <Tooltip>
@@ -420,7 +455,7 @@ export default function App() {
         {/* =========================================================================
             MAIN CITY CANVAS (DOMINANT 100% WIDTH, NO SIDEBAR)
             ========================================================================= */}
-        <main className="mg-backdrop relative min-h-0 flex-1 overflow-hidden">
+        <main data-tour="canvas" className="mg-backdrop relative min-h-0 flex-1 overflow-hidden">
           {/* FLOATING TOP TOOLBOX */}
           <TopToolbox
             activeTool={state.tool}
@@ -673,6 +708,7 @@ export default function App() {
           onOpenLoad={() => planner.refreshLayouts()}
           onOpenShortcuts={() => setShortcutsModalOpen(true)}
           onOpenClear={() => setClearOpen(true)}
+          onOpenOnboarding={() => setOnboardingOpen(true)}
           theme={theme}
           onToggleTheme={toggleTheme}
         />
@@ -682,6 +718,9 @@ export default function App() {
           open={shortcutsModalOpen}
           onClose={() => setShortcutsModalOpen(false)}
         />
+
+        {/* First-run onboarding tutorial (from landing page / palette) */}
+        <OnboardingTutorial open={onboardingOpen} onFinish={finishOnboarding} />
       </div>
     </TooltipProvider>
   );

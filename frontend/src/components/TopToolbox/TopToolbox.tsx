@@ -165,6 +165,7 @@ export function TopToolbox({
             {/* Category 1: TOOLS */}
             <button
               type="button"
+              data-tour="tools"
               onClick={() => {
                 const next = activeCategory === "tools" ? null : "tools";
                 setActiveCategory(next);
@@ -184,6 +185,7 @@ export function TopToolbox({
             {/* Category 2: ZONES */}
             <button
               type="button"
+              data-tour="zones"
               onClick={() => {
                 const next = activeCategory === "zones" ? null : "zones";
                 setActiveCategory(next);

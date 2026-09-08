@@ -229,6 +229,11 @@ function DetailedZoneLabel({
 }) {
   const isRoad = isRoadMeshType(mesh.type);
   const color = ZONE_COLOR[mesh.type] ?? "#94a3b8";
+  const typeLabel = ZONE_LABEL[mesh.type] ?? "Structure";
+  const zoneName = mesh.attributes?.name || typeLabel;
+  // Tile size: real-world footprint in meters (mesh footprints are already
+  // meter-scaled by translateGridToFreeform).
+  const tileSize = `${mesh.footprint.width.toFixed(0)}m × ${mesh.footprint.depth.toFixed(0)}m`;
 
   return (
     <Html
@@ -238,23 +243,25 @@ function DetailedZoneLabel({
       className="pointer-events-none select-none transition-opacity duration-300"
     >
       <div className="flex flex-col items-center rounded-lg border border-border/80 bg-card/95 px-2.5 py-1.5 font-mono shadow-xl backdrop-blur-md">
-        <div className="flex items-center gap-1.5 text-[11px] font-bold text-foreground">
-          <span
-            className="h-2.5 w-2.5 rounded-full shadow-sm"
-            style={{ backgroundColor: color }}
-          />
-          <span>{ZONE_LABEL[mesh.type] ?? "Structure"}</span>
-        </div>
-        <div className="flex items-center gap-1.5 text-[9px] text-muted-foreground mt-0.5">
-          <span>{Math.round(mesh.footprint.width * mesh.footprint.depth)} m²</span>
-          {showFullDetails && !isRoad && (
-            <span>• {mesh.footprint.width.toFixed(1)}m × {mesh.footprint.depth.toFixed(1)}m</span>
-          )}
-        </div>
-        {showFullDetails && (
-          <div className="mt-1 flex items-center gap-1 text-[8px] font-semibold uppercase tracking-wider text-primary">
-            <span>{isRoad ? "Road Segment" : `Height: ${height.toFixed(1)}m`}</span>
-          </div>
+        {/* 1. Zone Name — rendered in the zone type's color */}
+        <span className="text-[11px] font-bold" style={{ color }}>
+          {zoneName}
+        </span>
+        {/* 2. Zone Type */}
+        <span className="text-[9px] text-muted-foreground mt-0.5">{typeLabel}</span>
+        {/* 3. Tile Size */}
+        <span className="text-[9px] font-semibold mt-0.5" style={{ color }}>
+          {isRoad ? `${Math.round(mesh.footprint.width * mesh.footprint.depth)} m²` : tileSize}
+        </span>
+        {showFullDetails && !isRoad && (
+          <span className="mt-0.5 text-[8px] font-semibold uppercase tracking-wider text-primary">
+            Height: {height.toFixed(1)}m
+          </span>
+        )}
+        {showFullDetails && isRoad && (
+          <span className="mt-0.5 text-[8px] font-semibold uppercase tracking-wider text-primary">
+            Road Segment
+          </span>
         )}
       </div>
     </Html>

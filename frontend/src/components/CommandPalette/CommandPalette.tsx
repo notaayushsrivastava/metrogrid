@@ -22,6 +22,7 @@ import {
   Route,
   Keyboard,
   X,
+  Sparkles,
 } from "lucide-react";
 import type { ToolId } from "../../types/city";
 
@@ -48,6 +49,7 @@ interface CommandPaletteProps {
   onOpenLoad: () => void;
   onOpenShortcuts: () => void;
   onOpenClear: () => void;
+  onOpenOnboarding: () => void;
   theme: "dark" | "light";
   onToggleTheme: () => void;
 }
@@ -66,6 +68,7 @@ export function CommandPalette({
   onOpenLoad,
   onOpenShortcuts,
   onOpenClear,
+  onOpenOnboarding,
   theme,
   onToggleTheme,
 }: CommandPaletteProps) {
@@ -247,6 +250,13 @@ export function CommandPalette({
         icon: Keyboard,
         onSelect: onOpenShortcuts,
       },
+      {
+        id: "settings-onboarding",
+        label: "Replay Onboarding Tutorial",
+        category: "Settings",
+        icon: Sparkles,
+        onSelect: onOpenOnboarding,
+      },
     ],
     [
       onSelectTool,
@@ -259,6 +269,7 @@ export function CommandPalette({
       onOpenLoad,
       onOpenShortcuts,
       onOpenClear,
+      onOpenOnboarding,
       theme,
       onToggleTheme,
     ]

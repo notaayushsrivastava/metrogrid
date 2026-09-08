@@ -31,11 +31,11 @@ async def list_layouts() -> LayoutListResponse:
 async def save_layout(payload: SaveLayoutRequest) -> LayoutDetail:
     """Save the current sparse tile map under a sanitized name."""
     try:
-        tiles = validate_grid_state_payload(payload.grid_state)
+        validate_grid_state_payload(payload.grid_state)
+        row = store.save_layout(payload.name, payload.grid_state)
     except (ValueError, InvalidTileKey) as exc:
+        # Tiles, zones, roads, and terrain all validate inside save_layout.
         raise ApiError(400, f"Invalid grid: {exc}") from exc
-
-    row = store.save_layout(payload.name, payload.grid_state)
     return LayoutDetail(
         id=row["id"],
         name=row["name"],

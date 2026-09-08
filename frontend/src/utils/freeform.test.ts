@@ -54,6 +54,28 @@ describe("freeform utilities", () => {
     expect(meshes[0].rotation).toBe(45);
   });
 
+  it("keeps zone ids stable so DB-loaded zones can be selected and deleted", () => {
+    // Regression: zones loaded from Supabase have non-"mesh_" ids; prefixing
+    // them broke the mesh→zone mapping so Delete was a silent no-op.
+    const zones: SpatialZone[] = [
+      {
+        id: "zone-db-123",
+        type: 1,
+        position: { x: 0, y: 0 },
+        rotation: 0,
+        footprint: { width: 2, depth: 2 },
+        attributes: {},
+      },
+    ];
+
+    const meshes = translateGridToFreeform(new Map(), zones, 10.0);
+    expect(meshes[0].id).toBe("zone-db-123");
+
+    // Round-trip: mesh → zone must preserve the original id.
+    const back = translateFreeformToZones(meshes);
+    expect(back[0].id).toBe("zone-db-123");
+  });
+
   it("round-trips freeform meshes back to SpatialZone objects", () => {
     const originalMeshes = [
       {

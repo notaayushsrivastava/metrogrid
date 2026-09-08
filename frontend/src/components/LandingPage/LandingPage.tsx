@@ -237,7 +237,7 @@ function SceneNarrative({ scene, index, progress, active }: { scene: SceneDefini
         <div className="eyebrow"><span className="eyebrow-line" /> {scene.eyebrow}</div>
         <h1>{scene.title}<br /><em>{scene.emphasis}</em></h1>
         <p>{scene.copy}</p>
-        {index === 0 && <div className="scene-card-actions"><a href="/planner" className="primary-cta">Open planner <ArrowUpRight size={15} /></a><a href="#story" className="text-cta">Explore MetroGrid <ChevronRight size={15} /></a></div>}
+        {index === 0 && <div className="scene-card-actions"><a href="/planner?t=1" className="primary-cta">Open planner <ArrowUpRight size={15} /></a><a href="#story" className="text-cta">Explore MetroGrid <ChevronRight size={15} /></a></div>}
         <span className="scene-index">0{index + 1} / 08 <span>{scene.annotation}</span></span>
       </div>
     </article>
@@ -258,9 +258,9 @@ export function LandingPage({ theme, toggleTheme }: LandingPageProps) {
       <header className="narrative-nav">
         <a className="landing-brand" href="/" aria-label="MetroGrid home"><span className="brand-mark"><Grid3X3 size={17} strokeWidth={1.8} /></span><span>MetroGrid</span></a>
         <nav className={menuOpen ? "narrative-links is-open" : "narrative-links"} aria-label="Primary navigation">
-          <a href="/planner" onClick={() => setMenuOpen(false)}>Planner</a><a href="#story" onClick={() => setMenuOpen(false)}>Simulation</a><a href="#story" onClick={() => setMenuOpen(false)}>GIS</a><a href="/planner" onClick={() => setMenuOpen(false)}>3D</a>
+          <a href="/planner?t=1" onClick={() => setMenuOpen(false)}>Planner</a><a href="#story" onClick={() => setMenuOpen(false)}>Simulation</a><a href="#story" onClick={() => setMenuOpen(false)}>GIS</a><a href="/planner?t=1" onClick={() => setMenuOpen(false)}>3D</a>
         </nav>
-        <div className="narrative-actions"><button className="icon-action" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button><a href="/planner" className="nav-cta">Open planner <ArrowUpRight size={15} /></a><button className="menu-action" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div>
+        <div className="narrative-actions"><button className="icon-action" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button><a href="/planner?t=1" className="nav-cta">Open planner <ArrowUpRight size={15} /></a><button className="menu-action" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div>
       </header>
       <main id="story" className="narrative-story">
         <div className="story-stage">
@@ -268,7 +268,7 @@ export function LandingPage({ theme, toggleTheme }: LandingPageProps) {
           <div className="scene-copy-layer">{scenes.map((item, index) => <SceneNarrative key={item.id} scene={item} index={index} active={activeIndex === index} progress={reduced ? (index === 0 ? 1 : 0) : progress} />)}</div>
           <div className="story-progress" aria-label={`Story progress: ${Math.round(progress * 100)} percent`}><span style={{ height: `${Math.max(3, progress * 100)}%` }} /><i>{String(activeIndex + 1).padStart(2, "0")}</i></div>
         </div>
-        <section className="final-narrative"><div className="eyebrow"><span className="eyebrow-line" /> METROGRID / 09</div><h2>Build the city<br /><em>you can imagine.</em></h2><p>Explore MetroGrid and start designing.</p><div className="final-actions"><a href="/planner" className="primary-cta">Open planner <ArrowUpRight size={17} /></a><a href="#story" className="text-cta">Explore documentation <ChevronRight size={16} /></a></div></section>
+        <section className="final-narrative"><div className="eyebrow"><span className="eyebrow-line" /> METROGRID / 09</div><h2>Build the city<br /><em>you can imagine.</em></h2><p>Explore MetroGrid and start designing.</p><div className="final-actions"><a href="/planner?t=1" className="primary-cta">Open planner <ArrowUpRight size={17} /></a><a href="#story" className="text-cta">Explore documentation <ChevronRight size={16} /></a></div></section>
       </main>
       <footer className="landing-footer narrative-footer"><a className="landing-brand" href="/"><span className="brand-mark"><Grid3X3 size={17} /></span><span>MetroGrid</span></a><span>Urban planning, simulated.</span><small>© 2026 MetroGrid Systems</small></footer>
     </div>

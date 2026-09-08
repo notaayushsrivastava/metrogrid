@@ -823,10 +823,8 @@ function drawZone(
 
   // 7. Multi-tier Adaptive Blueprint Typography & Dimension Callouts
   const code = ZONE_CODES[zone.type] || "BLD-01";
-  const label = zone.attributes?.name || zoneLabel(zone.type);
   const widthM = zone.footprint.width * DEFAULT_TILE_METER_SIZE;
   const depthM = zone.footprint.depth * DEFAULT_TILE_METER_SIZE;
-  const areaM2 = Math.round(widthM * depthM);
 
   const availW = widthPx - 8;
   const availH = depthPx - 8;
@@ -848,28 +846,49 @@ function drawZone(
       ctx.textBaseline = "middle";
       ctx.fillText(code, 0, 0);
     } else {
-      // Tier 3: Full architectural label and real-world meter dimensions
+      // Tier 3: Three-line zone label (top → bottom):
+      //   1. Zone Name — rendered in the zone type's color
+      //   2. Zone Type
+      //   3. Tile Size (real-world meter dimensions)
       const titleFontSize = Math.max(9, Math.min(12, Math.round(size * 0.38)));
-      ctx.font = `bold ${titleFontSize}px "JetBrains Mono", monospace`;
-      ctx.fillStyle = "#ffffff";
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
 
-      const showSubtitle = availH >= 42;
-      const titleY = showSubtitle ? -Math.round(titleFontSize * 0.65) : 0;
-      const fullText = `[${code}] ${label.toUpperCase()}`;
-      const titleText = ctx.measureText(fullText).width <= availW ? fullText : `[${code}]`;
-      ctx.fillText(titleText, 0, titleY);
+      const showType = availH >= 42;
+      const showSize = availH >= 52;
+      const name = zone.attributes?.name || zoneLabel(zone.type);
 
-      if (showSubtitle) {
-        const subFontSize = Math.max(8, titleFontSize - 2);
-        ctx.font = `${subFontSize}px "JetBrains Mono", monospace`;
-        ctx.fillStyle = "#38bdf8";
-        const dimText = `${widthM.toFixed(0)}m × ${depthM.toFixed(0)}m (${areaM2.toLocaleString()}m²)`;
-        const shortDimText = `${widthM.toFixed(0)}×${depthM.toFixed(0)}m`;
-        const subText = ctx.measureText(dimText).width <= availW ? dimText : shortDimText;
-        ctx.fillText(subText, 0, Math.round(titleFontSize * 0.85));
+      const rows: { text: string; color: string; weight: string; scale: number }[] = [
+        { text: name, color: zoneColor(zone.type), weight: "bold", scale: 1 },
+      ];
+      if (showType) {
+        rows.push({ text: zoneLabel(zone.type), color: "#ffffff", weight: "", scale: 0.9 });
       }
+      if (showSize) {
+        rows.push({
+          text: `${widthM.toFixed(0)}m × ${depthM.toFixed(0)}m`,
+          color: "#38bdf8",
+          weight: "",
+          scale: 0.85,
+        });
+      }
+
+      // Vertical layout, centered on the zone center; ellipsize overflow.
+      const rowGap = Math.round(titleFontSize * 1.15);
+      const totalH = rowGap * (rows.length - 1);
+      rows.forEach((row, i) => {
+        const rowFs = Math.max(8, Math.round(titleFontSize * row.scale));
+        ctx.font = `${row.weight} ${rowFs}px "JetBrains Mono", monospace`.trim();
+        ctx.fillStyle = row.color;
+        let text = row.text;
+        if (ctx.measureText(text).width > availW) {
+          while (text.length > 1 && ctx.measureText(`${text}…`).width > availW) {
+            text = text.slice(0, -1);
+          }
+          text += "…";
+        }
+        ctx.fillText(text, 0, -totalH / 2 + i * rowGap);
+      });
     }
   }
 

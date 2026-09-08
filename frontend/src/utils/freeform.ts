@@ -106,7 +106,10 @@ export function translateGridToFreeform(
     const depth = Math.max(0.5, zone.footprint.depth * meterScale);
 
     result.push({
-      id: zone.id.startsWith("mesh_") ? zone.id : `mesh_${zone.id}`,
+      // Keep the zone id verbatim so mesh id === zone id. This round-trip
+      // stability is what makes Select + Delete work for zones loaded from
+      // the database (prefixing here used to break the mesh→zone mapping).
+      id: zone.id,
       type: zone.type,
       position: { x: posX, y: 0, z: posZ },
       rotation: zone.rotation,

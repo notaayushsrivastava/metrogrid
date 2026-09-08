@@ -31,6 +31,14 @@ MAX_ZONES = 5_000
 LAYOUT_VERSION = 2
 
 _ZONE_REQUIRED_KEYS = {"id", "type", "position", "rotation", "footprint"}
+_ROAD_REQUIRED_KEYS = {"id", "type", "points", "width"}
+
+# Structural caps for the v2 spatial extensions (mirrors MAX_ZONES spirit).
+MAX_ROADS = 5_000
+MAX_TERRAIN_ENTRIES = 200_000
+
+# Valid road subtypes (PRD §8, tile types 4/40-43).
+ROAD_TILE_TYPES = {4, 40, 41, 42, 43}
 
 _CONTROL_CHARS = re.compile(r"[\x00-\x1f\x7f]")
 
@@ -102,6 +110,84 @@ def validate_zones_payload(zones: Any) -> list[dict[str, Any]]:
                 "attributes": zone.get("attributes") or {},
             }
         )
+    return validated
+
+
+def validate_roads_payload(roads: Any) -> list[dict[str, Any]]:
+    """Validate the freeform road list of a v2 layout (PRD Phase 6).
+
+    Roads are spatial presentation/state data — the scoring engine consumes
+    only the derived tile map — so validation is structural (shape + ranges),
+    not semantic.
+    """
+    if not isinstance(roads, list):
+        raise ValueError("roads must be an array")
+    if len(roads) > MAX_ROADS:
+        raise ValueError("roads exceeds the allowed count")
+
+    validated: list[dict[str, Any]] = []
+    for i, road in enumerate(roads):
+        if not isinstance(road, dict) or not _ROAD_REQUIRED_KEYS.issubset(road):
+            raise ValueError(f"roads[{i}] is missing required keys")
+        rtype = road["type"]
+        if not isinstance(rtype, int) or rtype not in ROAD_TILE_TYPES:
+            raise ValueError(f"roads[{i}] has an unsupported road type")
+        points = road["points"]
+        if not isinstance(points, list) or not points:
+            raise ValueError(f"roads[{i}] must include at least one point")
+        parsed_points: list[dict[str, float]] = []
+        for point in points:
+            if not isinstance(point, dict) or not {"x", "y"}.issubset(point):
+                raise ValueError(f"roads[{i}] points must be {{x, y}} objects")
+            try:
+                px, py = float(point["x"]), float(point["y"])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"roads[{i}] has non-numeric points") from exc
+            if not (-2**31 <= px <= 2**31 and -2**31 <= py <= 2**31):
+                raise ValueError(f"roads[{i}] point out of range")
+            parsed_points.append({"x": px, "y": py})
+        try:
+            width = float(road["width"])
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"roads[{i}] has non-numeric width") from exc
+        if not (width > 0 and width <= 100):
+            raise ValueError(f"roads[{i}] width out of range")
+        entry: dict[str, Any] = {
+            "id": str(road["id"])[:64],
+            "type": int(rtype),
+            "points": parsed_points,
+            "width": width,
+        }
+        # Optional multi-level infrastructure metadata (PRD Phase 9) — kept
+        # verbatim when structurally sound, dropped when not.
+        level = road.get("level")
+        if isinstance(level, int) and -2 <= level <= 2:
+            entry["level"] = level
+        elevation = road.get("elevation")
+        if isinstance(elevation, (int, float)):
+            entry["elevation"] = float(elevation)
+        if road.get("isRamp"):
+            entry["isRamp"] = True
+        validated.append(entry)
+    return validated
+
+
+def validate_terrain_payload(terrain: Any) -> dict[str, float]:
+    """Validate the sparse terrain elevation map of a v2 layout."""
+    if not isinstance(terrain, dict):
+        raise ValueError("terrain must be an object")
+    if len(terrain) > MAX_TERRAIN_ENTRIES:
+        raise ValueError("terrain exceeds the allowed count")
+    validated: dict[str, float] = {}
+    for key, value in terrain.items():
+        x, y = parse_key(str(key))  # raises InvalidTileKey
+        try:
+            elev = float(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"terrain[{key!r}] is non-numeric") from exc
+        if elev < 0 or elev > 50:
+            raise ValueError(f"terrain[{key!r}] elevation out of range")
+        validated[f"{x},{y}"] = elev
     return validated
 
 
@@ -180,12 +266,17 @@ class LayoutStore:
         rows: list[dict[str, Any]] = []
         for item in response.data or []:
             grid = item.get("grid_state") or {}
+            # v2 wrapper counts inner tiles only (not the wrapper keys).
+            if _is_v2_wrapper(grid):
+                tile_count = len(grid.get("tiles") or {})
+            else:
+                tile_count = len(grid)
             rows.append(
                 {
                     "id": item["id"],
                     "name": item["name"],
                     "created_at": item.get("created_at"),
-                    "tile_count": len(grid),
+                    "tile_count": tile_count,
                 }
             )
         return rows
@@ -195,14 +286,20 @@ class LayoutStore:
         tiles = validate_grid_state_payload(grid_state)
 
         if _is_v2_wrapper(grid_state):
-            # v2: persist the wrapper as-is (tiles + validated zones) so
-            # freeform spatial state survives save/load (PRD Phase 5).
+            # v2: persist the full wrapper (tiles + validated zones + roads +
+            # terrain) so freeform spatial state survives save/load (PRD
+            # Phase 5/6). Roads previously dropped here → lost on reload.
             zones = validate_zones_payload(grid_state.get("zones", []))
+            roads = validate_roads_payload(grid_state.get("roads", []))
+            terrain = validate_terrain_payload(grid_state.get("terrain", {}))
             payload_grid: dict[str, Any] = {
                 "version": LAYOUT_VERSION,
                 "tiles": grid_state["tiles"],
                 "zones": zones,
+                "roads": roads,
             }
+            if terrain:
+                payload_grid["terrain"] = terrain
         else:
             zones = []
             payload_grid = {
