@@ -232,7 +232,8 @@ export function insertNodeIntoRoad(
 
 /**
  * Rasterize freeform road geometry into tile coordinates ("x,y" -> tileType).
- * Converts meters coordinates to tile grid space (1 tile cell = meterScale meters).
+ * Road POINTS are in cell coordinates (matching the 2D canvas + GIS import);
+ * only the physical WIDTH is in meters and converts to cells via ÷meterScale.
  */
 export function rasterizeFreeformRoadsToTiles(
   roads: SpatialRoad[],
@@ -248,11 +249,11 @@ export function rasterizeFreeformRoadsToTiles(
       const p1 = road.points[i];
       const p2 = road.points[i + 1];
 
-      // Convert meter coords to float cell coords
-      const gx1 = p1.x / meterScale;
-      const gy1 = p1.y / meterScale;
-      const gx2 = p2.x / meterScale;
-      const gy2 = p2.y / meterScale;
+      // Points are already in cell coordinates (no meter-scale division).
+      const gx1 = p1.x;
+      const gy1 = p1.y;
+      const gx2 = p2.x;
+      const gy2 = p2.y;
 
       const dist = Math.sqrt((gx2 - gx1) ** 2 + (gy2 - gy1) ** 2);
       const steps = Math.max(1, Math.ceil(dist * 4));

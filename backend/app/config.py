@@ -158,6 +158,14 @@ GIS_TILE_METERS = 30.0
 MIN_GRID_SPAN = 4
 MAX_GRID_SPAN = 100
 
+# Canonical meter-per-cell scale for the *spatial / freeform* layer (roads,
+# zones). This matches the frontend DEFAULT_TILE_METER_SIZE. GIS_TILE_METERS
+# above is the OSM rasterization detail scale (30 m per sparse-grid cell);
+# SPATIAL_TILE_METERS is the coordinate scale the freeform/scoring pipeline
+# rasterizes against (10 m per cell). Keeping them separate (and used in the
+# right place) is what makes imported road lengths proportional.
+SPATIAL_TILE_METERS = 10.0
+
 # GIS road-width scaling: spatial roads keep full real-world widths (mapped
 # against the 30 m tile scale) on dense imports, but the scale decreases
 # linearly down to half (30 → 15 m equivalent) when the imported grid has

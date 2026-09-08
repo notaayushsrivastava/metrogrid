@@ -449,6 +449,10 @@ def _extract_spatial_road(
     if len(grid_points) < 2:
         return None
 
+    # Points are stored in span-relative CELL coordinates — the same units as
+    # the 2D canvas renderer and hand-authored freeform roads. Keeping them in
+    # cells (rather than dividing by a meter scale in the rasterizers) is what
+    # makes an imported road's LENGTH proportional to the imported grid.
     pts = [GisSpatialRoadPoint(x=round(x, 2), y=round(y, 2), z=round(elevation, 2)) for x, y in grid_points]
     width = round(_ROAD_WIDTH_MAP.get(tile_type, 8.0) * width_scale, 2)
 

@@ -278,3 +278,30 @@ class TestRoadWidthScaling:
         assert roads
         assert roads[0].width == round(16.0 * expected_scale, 2)
         assert roads[0].width < 16.0
+
+
+class TestRoadLengthProportionality:
+    """Imported road points are in CELL units so their rasterized length stays
+    proportional to the imported grid (regression: points were divided by 10,
+    making every road ~10× too short)."""
+
+    def test_full_width_road_spans_the_imported_grid(self):
+        # A straight highway from the west edge to the east edge of the bbox.
+        feature = _road_feature(((80.24, 12.98), (80.25, 12.98)), tile_type=43)
+        span_x, span_y = grid_span(BOUNDS)
+        *_, roads = rasterize_features([feature], BOUNDS, ORIGIN)
+        assert roads
+        xs = sorted(p.x for p in roads[0].points)
+        ys = sorted(p.y for p in roads[0].points)
+        length_cells = xs[-1] - xs[0]
+        # Points are in cells: the road spans ~the full grid width.
+        assert length_cells > 10  # clearly NOT ÷10 (would be ~3.6)
+        assert abs(length_cells - span_x) < 0.5
+        # Rasterizing (÷1 in cells) yields a corridor along that whole width.
+        from app.services.scoring import rasterize_freeform_roads_to_tiles
+
+        tiles = rasterize_freeform_roads_to_tiles(roads, {})
+        x_cells = {x for (x, y) in tiles}
+        assert len(x_cells) > 10
+        assert min(x_cells) <= 0.0
+        assert max(x_cells) >= span_x - 1

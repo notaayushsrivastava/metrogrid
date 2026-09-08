@@ -18,17 +18,21 @@ def rasterize_freeform_roads_to_tiles(
     roads: list[SpatialRoadPayload], tiles: TileMap
 ) -> TileMap:
     merged = dict(tiles)
+    # Road points are in CELL coordinates (matching the 2D canvas + import);
+    # only the physical WIDTH is in meters and converts to cells via ÷10.
+    # This must agree with the frontend `deriveTileMap` rasterization.
+    m_per_cell = config.SPATIAL_TILE_METERS
     for r in roads:
         if not r.points or len(r.points) < 1:
             continue
-        thickness = max(1, int(round(r.width / config.GIS_TILE_METERS)))
+        thickness = max(1, int(round(r.width / m_per_cell)))
         for i in range(len(r.points) - 1):
             p1 = r.points[i]
             p2 = r.points[i + 1]
-            gx1 = p1.x / config.GIS_TILE_METERS
-            gy1 = p1.y / config.GIS_TILE_METERS
-            gx2 = p2.x / config.GIS_TILE_METERS
-            gy2 = p2.y / config.GIS_TILE_METERS
+            gx1 = p1.x
+            gy1 = p1.y
+            gx2 = p2.x
+            gy2 = p2.y
 
             dist = math.sqrt((gx2 - gx1) ** 2 + (gy2 - gy1) ** 2)
             steps = max(1, int(math.ceil(dist * 4)))

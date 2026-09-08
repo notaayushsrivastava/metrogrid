@@ -1,13 +1,14 @@
 """Tests for the scoring engine (PRD §25.1 #3, #4, #5, #9 + local delta §11)."""
 
 from app import config
-from app.models.requests import LatestAction, SpatialZonePayload
+from app.models.requests import LatestAction, SpatialRoadPayload, SpatialRoadPoint, SpatialZonePayload
 from app.services.scoring import (
     compute_local_delta,
     compute_raw_scores,
     compute_scores,
     freeform_livability_pair_factors,
     normalize_score,
+    rasterize_freeform_roads_to_tiles,
 )
 from app.services.sparse import TileMap
 
@@ -107,6 +108,41 @@ class TestTrafficScoring:
             (3, 0): config.COMMERCIAL,
         }
         assert compute_raw_scores(tiles)["traffic"] == config.TRAFFIC_BASE
+
+
+def _road(type_, points, width):
+    return SpatialRoadPayload(
+        id="r",
+        type=type_,
+        points=[SpatialRoadPoint(x=float(x), y=float(y)) for x, y in points],
+        width=float(width),
+    )
+
+
+class TestRoadRasterizationProportionality:
+    """Road points are CELL coordinates (length proportional to the grid);
+    only WIDTH is in meters and converts to cells via ÷10."""
+
+    def test_cell_points_produce_proportional_length(self):
+        # A road spanning cells 0..20 must paint cells across that whole width,
+        # not a tiny 0..2 corridor.
+        road = _road(config.ROAD_LOCAL, [(0.0, 0.0), (20.0, 0.0)], 8.0)
+        tiles = rasterize_freeform_roads_to_tiles([road], {})
+        xs = {x for (x, y) in tiles}
+        assert min(xs) == 0
+        assert max(xs) == 20
+        assert len(xs) > 10
+
+    def test_width_meters_convert_to_cell_thickness(self):
+        # 8 m local road → 1 cell thick; 20 m highway → 2 cells thick.
+        local = _road(config.ROAD_LOCAL, [(0.0, 0.0), (10.0, 0.0)], 8.0)
+        wide = _road(config.ROAD_HIGHWAY, [(0.0, 0.0), (10.0, 0.0)], 20.0)
+        thin = rasterize_freeform_roads_to_tiles([local], {})
+        thick = rasterize_freeform_roads_to_tiles([wide], {})
+        ys_thin = {y for (x, y) in thin}
+        ys_thick = {y for (x, y) in thick}
+        assert max(ys_thin) - min(ys_thin) == 0  # 1 cell (8/10 → 1)
+        assert max(ys_thick) - min(ys_thick) == 1  # 2 cells (20/10 → 2)
 
 
 class TestNormalization:
