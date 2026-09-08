@@ -10,7 +10,8 @@
 
 import { useCallback, useEffect, useRef } from "react";
 import { cellSize, cellToScreenPx, screenToGrid, type Camera, type GridPoint } from "../../utils/coordinates";
-import { zoneColor, zoneCorners, zoneLabel, zoneOverlaps, resizeFromCorner } from "../../utils/spatial";
+import { zoneColor, zoneLabel, zoneOverlaps, resizeFromCorner, deg2rad } from "../../utils/spatial";
+import { DEFAULT_TILE_METER_SIZE } from "../../utils/freeform";
 import type { GridState } from "../../types/city";
 import type { SpatialZone, SpatialRoad, SpatialRoadPoint, RoadSubtype } from "../../types/spatial";
 import { getDefaultRoadWidth, rotateRoadAroundCenter, getRoadLevel, LEVEL_SHORT_BADGES } from "../../utils/freeformRoads";
@@ -56,6 +57,7 @@ interface SpatialCanvasProps {
 
   /** Read-only mode for Plan Preview */
   readOnly?: boolean;
+  showTraffic?: boolean;
 }
 
 
@@ -171,7 +173,8 @@ export function SpatialCanvas(props: SpatialCanvasProps) {
         to,
         size,
         road.id === selRoadRef.current,
-        time
+        time,
+        p.showTraffic ?? true
       );
     }
 
@@ -539,7 +542,8 @@ function drawRoad(
   to: (x: number, y: number) => { px: number; py: number },
   size: number,
   selected: boolean,
-  time: number
+  time: number,
+  showTraffic = true
 ): void {
   if (road.points.length < 2) return;
 
@@ -618,17 +622,19 @@ function drawRoad(
   ctx.stroke();
 
   // 4. Animated Glowing Traffic Flow Dash Line
-  ctx.beginPath();
-  points.forEach((pt, i) => {
-    if (i === 0) ctx.moveTo(pt.px, pt.py);
-    else ctx.lineTo(pt.px, pt.py);
-  });
-  ctx.setLineDash([8, 12]);
-  ctx.lineDashOffset = -time * 30;
-  ctx.strokeStyle = isTunnel ? "#38bdf8" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#7cffb2";
-  ctx.lineWidth = Math.max(1.5, strokeWidthPx * 0.25);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  if (showTraffic) {
+    ctx.beginPath();
+    points.forEach((pt, i) => {
+      if (i === 0) ctx.moveTo(pt.px, pt.py);
+      else ctx.lineTo(pt.px, pt.py);
+    });
+    ctx.setLineDash([8, 12]);
+    ctx.lineDashOffset = -time * 30;
+    ctx.strokeStyle = isTunnel ? "#38bdf8" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#7cffb2";
+    ctx.lineWidth = Math.max(1.5, strokeWidthPx * 0.25);
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
 
   // 5. Level Badge / Drafting Callout Tag (if selected or zoomed in)
   if (points.length >= 2 && (selected || size > 24)) {
@@ -726,83 +732,145 @@ function drawZone(
   size: number,
   selected: boolean
 ): void {
-  const corners = zoneCorners(zone).map((c) => to(c.x, c.y));
-  const color = zoneColor(zone.type);
   const center = to(zone.position.x, zone.position.y);
+  const color = zoneColor(zone.type);
+  const widthPx = zone.footprint.width * size;
+  const depthPx = zone.footprint.depth * size;
+  const hwPx = widthPx / 2;
+  const hdPx = depthPx / 2;
+  const minDim = Math.min(widthPx, depthPx);
 
   ctx.save();
-  ctx.beginPath();
-  corners.forEach((c, i) => {
-    if (i === 0) ctx.moveTo(c.px, c.py);
-    else ctx.lineTo(c.px, c.py);
-  });
-  ctx.closePath();
+  ctx.translate(center.px, center.py);
+  ctx.rotate(deg2rad(zone.rotation));
 
-  // Blueprint background fill
-  ctx.fillStyle = hexToRgba(color, 0.22);
-  ctx.fill();
+  // 1. Blueprint Background Fill
+  ctx.fillStyle = hexToRgba(color, selected ? 0.35 : 0.22);
+  ctx.fillRect(-hwPx, -hdPx, widthPx, depthPx);
 
-  // Technical crosshatch inside zone
-  ctx.save();
-  ctx.clip();
-  ctx.strokeStyle = "rgba(56, 189, 248, 0.16)";
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  for (let d = -200; d < 200; d += 12) {
-    ctx.moveTo(center.px + d - 200, center.py - 200);
-    ctx.lineTo(center.px + d + 200, center.py + 200);
+  // 2. Technical crosshatch inside clipped zone (only when large enough)
+  if (minDim >= 20) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(-hwPx, -hdPx, widthPx, depthPx);
+    ctx.clip();
+    ctx.strokeStyle = "rgba(56, 189, 248, 0.14)";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const hatchStep = Math.max(10, Math.round(size * 0.4));
+    const maxExtent = hwPx + hdPx;
+    for (let d = -maxExtent; d <= maxExtent; d += hatchStep) {
+      ctx.moveTo(-hwPx + d, -hdPx);
+      ctx.lineTo(-hwPx + d + depthPx, hdPx);
+    }
+    ctx.stroke();
+    ctx.restore();
   }
-  ctx.stroke();
-  ctx.restore();
 
-  // Technical double border
+  // 3. Primary Solid Outer Border
   ctx.strokeStyle = selected ? "#ffd166" : color;
   ctx.lineWidth = selected ? 2.5 : 1.6;
-  ctx.stroke();
+  ctx.strokeRect(-hwPx, -hdPx, widthPx, depthPx);
 
-  // Inner dashed technical drafting line
-  ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
-  ctx.lineWidth = 0.8;
-  ctx.setLineDash([4, 4]);
-  ctx.stroke();
-  ctx.setLineDash([]);
+  // 4. Subtle Inner Inset Drafting Line (only if zone is large enough)
+  if (minDim >= 24) {
+    const inset = Math.min(3, minDim * 0.08);
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.lineWidth = 0.8;
+    ctx.setLineDash([3, 3]);
+    ctx.strokeRect(-hwPx + inset, -hdPx + inset, widthPx - inset * 2, depthPx - inset * 2);
+    ctx.setLineDash([]);
+  }
 
-  // Corner nodes
-  corners.forEach((c) => {
+  // 5. Center Registration Tick (only when zone has breathing room)
+  if (minDim >= 28) {
+    const tickLen = Math.min(5, minDim * 0.15);
+    ctx.strokeStyle = selected ? "#ffd166" : "#38bdf8";
+    ctx.lineWidth = 1.2;
     ctx.beginPath();
-    ctx.arc(c.px, c.py, selected ? HANDLE_R : 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = selected ? "#ffd166" : "#38bdf8";
-    ctx.fill();
-  });
+    ctx.moveTo(-tickLen, 0);
+    ctx.lineTo(tickLen, 0);
+    ctx.moveTo(0, -tickLen);
+    ctx.lineTo(0, tickLen);
+    ctx.stroke();
+  }
 
-  // Center registration tick
-  ctx.strokeStyle = "#38bdf8";
-  ctx.lineWidth = 1.2;
-  ctx.beginPath();
-  ctx.moveTo(center.px - 5, center.py);
-  ctx.lineTo(center.px + 5, center.py);
-  ctx.moveTo(center.px, center.py - 5);
-  ctx.lineTo(center.px, center.py + 5);
-  ctx.stroke();
+  // 6. Corner Handles / Dots
+  const cornersLocal: [number, number][] = [
+    [-hwPx, -hdPx],
+    [hwPx, -hdPx],
+    [hwPx, hdPx],
+    [-hwPx, hdPx],
+  ];
+  if (selected) {
+    cornersLocal.forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, HANDLE_R, 0, Math.PI * 2);
+      ctx.fillStyle = "#ffd166";
+      ctx.fill();
+      ctx.strokeStyle = "#0f172a";
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+    });
+  } else if (minDim >= 24) {
+    cornersLocal.forEach(([cx, cy]) => {
+      ctx.beginPath();
+      ctx.arc(cx, cy, 1.8, 0, Math.PI * 2);
+      ctx.fillStyle = "#38bdf8";
+      ctx.fill();
+    });
+  }
 
-  // Blueprint Zone Text Callout
+  // 7. Multi-tier Adaptive Blueprint Typography & Dimension Callouts
   const code = ZONE_CODES[zone.type] || "BLD-01";
-  const label = zoneLabel(zone.type);
-  const area = Math.round(zone.footprint.width * zone.footprint.depth);
+  const label = zone.attributes?.name || zoneLabel(zone.type);
+  const widthM = zone.footprint.width * DEFAULT_TILE_METER_SIZE;
+  const depthM = zone.footprint.depth * DEFAULT_TILE_METER_SIZE;
+  const areaM2 = Math.round(widthM * depthM);
 
-  ctx.fillStyle = "#ffffff";
-  ctx.font = `bold ${Math.max(10, Math.round(size * 0.45))}px "JetBrains Mono", monospace`;
-  ctx.textAlign = "center";
-  ctx.fillText(`[${code}] ${label.toUpperCase()}`, center.px, center.py - 10);
+  const availW = widthPx - 8;
+  const availH = depthPx - 8;
 
-  if (size > 14) {
-    ctx.fillStyle = "#38bdf8";
-    ctx.font = `${Math.max(8, Math.round(size * 0.32))}px "JetBrains Mono", monospace`;
-    ctx.fillText(
-      `${zone.footprint.width.toFixed(1)}m × ${zone.footprint.depth.toFixed(1)}m (${area}m²)`,
-      center.px,
-      center.py + 12
-    );
+  if (availW >= 14 && availH >= 14) {
+    if (availW < 45 || availH < 22) {
+      // Tier 1: Single character glyph for very tight cells
+      const glyph = zone.type === 1 ? "R" : zone.type === 2 ? "C" : zone.type === 3 ? "P" : "I";
+      ctx.font = `bold ${Math.max(9, Math.min(13, Math.round(minDim * 0.45)))}px "JetBrains Mono", monospace`;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(glyph, 0, 0);
+    } else if (availW < 80 || availH < 34) {
+      // Tier 2: Compact short code [RES]
+      ctx.font = `bold ${Math.max(8, Math.min(11, Math.round(minDim * 0.3)))}px "JetBrains Mono", monospace`;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(code, 0, 0);
+    } else {
+      // Tier 3: Full architectural label and real-world meter dimensions
+      const titleFontSize = Math.max(9, Math.min(12, Math.round(size * 0.38)));
+      ctx.font = `bold ${titleFontSize}px "JetBrains Mono", monospace`;
+      ctx.fillStyle = "#ffffff";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+
+      const showSubtitle = availH >= 42;
+      const titleY = showSubtitle ? -Math.round(titleFontSize * 0.65) : 0;
+      const fullText = `[${code}] ${label.toUpperCase()}`;
+      const titleText = ctx.measureText(fullText).width <= availW ? fullText : `[${code}]`;
+      ctx.fillText(titleText, 0, titleY);
+
+      if (showSubtitle) {
+        const subFontSize = Math.max(8, titleFontSize - 2);
+        ctx.font = `${subFontSize}px "JetBrains Mono", monospace`;
+        ctx.fillStyle = "#38bdf8";
+        const dimText = `${widthM.toFixed(0)}m × ${depthM.toFixed(0)}m (${areaM2.toLocaleString()}m²)`;
+        const shortDimText = `${widthM.toFixed(0)}×${depthM.toFixed(0)}m`;
+        const subText = ctx.measureText(dimText).width <= availW ? dimText : shortDimText;
+        ctx.fillText(subText, 0, Math.round(titleFontSize * 0.85));
+      }
+    }
   }
 
   ctx.restore();
@@ -815,18 +883,19 @@ function drawGhost(
   size: number,
   collides: boolean
 ): void {
-  const corners = zoneCorners(zone).map((c) => to(c.x, c.y));
+  const center = to(zone.position.x, zone.position.y);
+  const widthPx = zone.footprint.width * size;
+  const depthPx = zone.footprint.depth * size;
+  const hwPx = widthPx / 2;
+  const hdPx = depthPx / 2;
+
   ctx.save();
-  ctx.beginPath();
-  corners.forEach((c, i) => {
-    if (i === 0) ctx.moveTo(c.px, c.py);
-    else ctx.lineTo(c.px, c.py);
-  });
-  ctx.closePath();
+  ctx.translate(center.px, center.py);
+  ctx.rotate(deg2rad(zone.rotation));
   ctx.setLineDash([4, 3]);
-  ctx.strokeStyle = collides ? "#ff6b6b" : "rgba(124,255,178,0.85)";
+  ctx.strokeStyle = collides ? "#ff6b6b" : "rgba(124, 255, 178, 0.85)";
   ctx.lineWidth = 1.6;
-  ctx.stroke();
+  ctx.strokeRect(-hwPx, -hdPx, widthPx, depthPx);
   ctx.setLineDash([]);
   ctx.restore();
   void size;

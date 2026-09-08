@@ -75,7 +75,7 @@ describe("screenToGrid", () => {
 
 describe("clampZoom", () => {
   it("clamps to MIN_ZOOM/MAX_ZOOM", () => {
-    expect(clampZoom(0.1)).toBe(MIN_ZOOM);
+    expect(clampZoom(0.01)).toBe(MIN_ZOOM);
     expect(clampZoom(5)).toBe(MAX_ZOOM);
     expect(clampZoom(0.3)).toBe(0.3);
   });

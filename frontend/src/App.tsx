@@ -119,6 +119,7 @@ export default function App() {
   const [cameraFov, setCameraFov] = useState<number>(45);
   const [cameraPresetTrigger, setCameraPresetTrigger] = useState<{ type: "top" | "iso" | "street" | "reset"; timestamp: number } | null>(null);
   const [showGridOverlay, setShowGridOverlay] = useState<boolean>(true);
+  const [showTraffic, setShowTraffic] = useState<boolean>(true);
   const [snapEnabled, setSnapEnabled] = useState<boolean>(true);
 
   const handleCameraPreset = (type: "top" | "iso" | "street" | "reset") => {
@@ -449,6 +450,8 @@ export default function App() {
             onZoomOut={handleZoomOut}
             showGridOverlay={showGridOverlay}
             onToggleGridOverlay={() => setShowGridOverlay((g) => !g)}
+            showTraffic={showTraffic}
+            onToggleTraffic={() => setShowTraffic((t) => !t)}
             snapEnabled={snapEnabled}
             onToggleSnap={() => setSnapEnabled((s) => !s)}
           />
@@ -492,10 +495,12 @@ export default function App() {
                 cameraFov={cameraFov}
                 cameraPresetTrigger={cameraPresetTrigger}
                 showGridOverlay={showGridOverlay}
+                showTraffic={showTraffic}
                 snapEnabled={snapEnabled}
                 hideZones={hideZones}
                 viewCutawayLevel={viewCutawayLevel}
                 onViewCutawayLevelChange={setViewCutawayLevel}
+                armedUrl={armedUrl}
               />
             </Suspense>
           ) : view3d ? (
@@ -535,6 +540,8 @@ export default function App() {
               activeTool={state.tool}
               snapEnabled={snapEnabled}
               readOnly={!isBuildRoute}
+              showGridOverlay={showGridOverlay}
+              showTraffic={showTraffic}
               freeformMode={isBuildRoute && state.freeformMode}
               selectedZoneId={isBuildRoute ? state.selectedZoneId : null}
               selectedRoadId={isBuildRoute ? state.selectedRoadId : null}

@@ -9,8 +9,8 @@
 import { TILE, type GisBounds, type GridState, type TileObject, type TileType } from "../types/city";
 
 /** Mirrors backend `MAX_BBOX_SPAN_DEG` / `MAX_BBOX_AREA_DEG2` (app/config.py). */
-export const MAX_BBOX_SPAN_DEG = 0.1;
-export const MAX_BBOX_AREA_DEG2 = 0.01;
+export const MAX_BBOX_SPAN_DEG = 0.05;
+export const MAX_BBOX_AREA_DEG2 = 0.0025;
 
 export interface BoundsIssue {
   field: "north" | "south" | "east" | "west";
@@ -54,11 +54,11 @@ export function validateGisBounds(bounds: GisBounds): BoundsIssue[] {
 
 /**
  * Estimate the on-grid size of a selected area (≈ backend projection:
- * one cell ≈ 15 m, aspect-corrected). Purely informational for the UI.
+ * one cell ≈ 30 m, aspect-corrected). Purely informational for the UI.
  */
 const METERS_PER_DEG_LAT = 110_574;
 const METERS_PER_DEG_LON = 111_320;
-export const GIS_TILE_METERS = 15;
+export const GIS_TILE_METERS = 30;
 
 export function estimateGridSpan(bounds: GisBounds): { cellsX: number; cellsY: number } {
   const midLat = (bounds.north + bounds.south) / 2;

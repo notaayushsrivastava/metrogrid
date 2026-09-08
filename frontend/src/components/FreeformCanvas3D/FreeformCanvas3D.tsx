@@ -11,9 +11,9 @@
  * - WASD map panning & Q/E elevation controls for 3D camera navigation.
  */
 
-import { useState, useRef, useEffect, useMemo, createContext, useContext } from "react";
+import { useState, useRef, useEffect, useMemo, createContext, useContext, Suspense, Component, type ReactNode } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { OrbitControls, TransformControls, Html } from "@react-three/drei";
+import { OrbitControls, TransformControls, Html, useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { OrbitControls as OrbitControlsImpl } from "three-stdlib";
 import {
@@ -57,10 +57,12 @@ interface FreeformCanvas3DProps {
   cameraFov?: number;
   cameraPresetTrigger?: { type: "top" | "iso" | "street" | "reset"; timestamp: number } | null;
   showGridOverlay?: boolean;
+  showTraffic?: boolean;
   snapEnabled?: boolean;
   hideZones?: boolean;
   viewCutawayLevel?: number | null;
   onViewCutawayLevelChange?: (lvl: number | null) => void;
+  armedUrl?: string | null;
 }
 
 const ZONE_COLOR: Record<number, string> = {
@@ -124,7 +126,8 @@ function WASDCameraController({ orbitRef }: { orbitRef: React.RefObject<OrbitCon
     const controls = orbitRef.current;
     if (!controls) return;
 
-    const moveSpeed = 45.0 * delta; // 45 meters/sec
+    const baseSpeed = Math.max(35.0, state.camera.position.y * 0.8);
+    const moveSpeed = baseSpeed * delta;
     const camera = state.camera;
 
     // Calculate camera forward vector projected onto ground plane (XZ)
@@ -258,6 +261,42 @@ function DetailedZoneLabel({
   );
 }
 
+class FreeformModelBoundary extends Component<
+  { children: ReactNode; fallback: ReactNode },
+  { failed: boolean }
+> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  render() {
+    if (this.state.failed) return this.props.fallback;
+    return this.props.children;
+  }
+}
+
+function FreeformGltfModel({
+  url,
+  width,
+  height,
+  depth,
+}: {
+  url: string;
+  width: number;
+  height: number;
+  depth: number;
+}) {
+  const { scene } = useGLTF(url);
+  const cloned = useMemo(() => scene.clone(), [scene]);
+  return (
+    <primitive
+      object={cloned}
+      scale={[width / 10, height / 4, depth / 10]}
+      position={[0, -height / 2, 0]}
+    />
+  );
+}
+
 interface ZoneMeshItemProps {
   mesh: FreeformZoneMesh;
   terrain?: Map<string, number>;
@@ -268,6 +307,7 @@ interface ZoneMeshItemProps {
   transformMode: "translate" | "rotate" | "scale";
   totalMeshCount: number;
   snapEnabled?: boolean;
+  showTraffic?: boolean;
 }
 
 function ZoneMeshItem({
@@ -280,6 +320,7 @@ function ZoneMeshItem({
   transformMode,
   totalMeshCount,
   snapEnabled = true,
+  showTraffic = true,
 }: ZoneMeshItemProps) {
   const lod = useContext(LODContext);
   const meshRef = useRef<THREE.Mesh>(null!);
@@ -307,7 +348,7 @@ function ZoneMeshItem({
   useEffect(() => {
     if (meshRef.current) {
       meshRef.current.position.set(mesh.position.x, elev + height / 2, mesh.position.z);
-      meshRef.current.rotation.y = (mesh.rotation * Math.PI) / 180;
+      meshRef.current.rotation.y = (-mesh.rotation * Math.PI) / 180;
       meshRef.current.scale.set(1, 1, 1);
     }
   }, [mesh.position.x, mesh.position.z, mesh.rotation, height, elev]);
@@ -323,7 +364,9 @@ function ZoneMeshItem({
       if (!isDragging && meshRef.current) {
         const p = meshRef.current.position;
         const s = meshRef.current.scale;
-        const rotY = (meshRef.current.rotation.y * 180) / Math.PI;
+        const rotY = (-meshRef.current.rotation.y * 180) / Math.PI;
+        let normRot = Math.round(rotY) % 360;
+        if (normRot < 0) normRot += 360;
 
         const newWidth = Math.max(0.5, mesh.footprint.width * Math.abs(s.x));
         const newDepth = Math.max(0.5, mesh.footprint.depth * Math.abs(s.z));
@@ -334,7 +377,7 @@ function ZoneMeshItem({
         onUpdateMesh({
           ...mesh,
           position: { x: p.x, y: 0, z: p.z },
-          rotation: rotY,
+          rotation: normRot,
           footprint: { width: newWidth, depth: newDepth },
           area: newArea,
         });
@@ -355,7 +398,7 @@ function ZoneMeshItem({
       <mesh
         ref={meshRef}
         position={[mesh.position.x, height / 2, mesh.position.z]}
-        rotation={[0, (mesh.rotation * Math.PI) / 180, 0]}
+        rotation={[0, (-mesh.rotation * Math.PI) / 180, 0]}
         onClick={(e) => {
           e.stopPropagation();
           onSelect(mesh.id);
@@ -368,15 +411,56 @@ function ZoneMeshItem({
         castShadow={!isRoad && totalMeshCount < 100}
         receiveShadow
       >
-        <boxGeometry args={[mesh.footprint.width, height, mesh.footprint.depth]} />
-        <meshStandardMaterial
-          color={hovered ? "#cbd5e1" : baseColor}
-          roughness={isRoad ? 0.9 : 0.4}
-          metalness={isRoad ? 0.05 : 0.1}
-          emissive={isSelected ? "#38bdf8" : "#000000"}
-          emissiveIntensity={isSelected ? 0.25 : 0}
-        />
-        {isRoad && (
+        {mesh.model_url ? (
+          <FreeformModelBoundary
+            fallback={
+              <>
+                <boxGeometry args={[mesh.footprint.width, height, mesh.footprint.depth]} />
+                <meshStandardMaterial
+                  color={hovered ? "#cbd5e1" : baseColor}
+                  roughness={isRoad ? 0.9 : 0.4}
+                  metalness={isRoad ? 0.05 : 0.1}
+                  emissive={isSelected ? "#38bdf8" : "#000000"}
+                  emissiveIntensity={isSelected ? 0.25 : 0}
+                />
+              </>
+            }
+          >
+            <Suspense
+              fallback={
+                <>
+                  <boxGeometry args={[mesh.footprint.width, height, mesh.footprint.depth]} />
+                  <meshStandardMaterial
+                    color={hovered ? "#cbd5e1" : baseColor}
+                    roughness={isRoad ? 0.9 : 0.4}
+                    metalness={isRoad ? 0.05 : 0.1}
+                    emissive={isSelected ? "#38bdf8" : "#000000"}
+                    emissiveIntensity={isSelected ? 0.25 : 0}
+                  />
+                </>
+              }
+            >
+              <FreeformGltfModel
+                url={mesh.model_url}
+                width={mesh.footprint.width}
+                height={height}
+                depth={mesh.footprint.depth}
+              />
+            </Suspense>
+          </FreeformModelBoundary>
+        ) : (
+          <>
+            <boxGeometry args={[mesh.footprint.width, height, mesh.footprint.depth]} />
+            <meshStandardMaterial
+              color={hovered ? "#cbd5e1" : baseColor}
+              roughness={isRoad ? 0.9 : 0.4}
+              metalness={isRoad ? 0.05 : 0.1}
+              emissive={isSelected ? "#38bdf8" : "#000000"}
+              emissiveIntensity={isSelected ? 0.25 : 0}
+            />
+          </>
+        )}
+        {isRoad && showTraffic && (
           <AnimatedRoadTraffic3D
             width={mesh.footprint.width}
             depth={mesh.footprint.depth}
@@ -446,7 +530,7 @@ function InstancedZoneGroup({
     const dummy = new THREE.Object3D();
     groupMeshes.forEach((m, idx) => {
       dummy.position.set(m.position.x, height / 2, m.position.z);
-      dummy.rotation.set(0, (m.rotation * Math.PI) / 180, 0);
+      dummy.rotation.set(0, (-m.rotation * Math.PI) / 180, 0);
       dummy.scale.set(m.footprint.width, height, m.footprint.depth);
       dummy.updateMatrix();
       meshRef.current.setMatrixAt(idx, dummy.matrix);
@@ -484,12 +568,14 @@ function SpatialRoad3DItem({
   isSelected,
   onSelect,
   viewCutawayLevel,
+  showTraffic = true,
 }: {
   road: SpatialRoad;
   terrain?: Map<string, number>;
   isSelected: boolean;
   onSelect?: (id: string) => void;
   viewCutawayLevel?: number | null;
+  showTraffic?: boolean;
 }) {
   if (!road.points || road.points.length < 2) return null;
   const level = getRoadLevel(road);
@@ -606,11 +692,13 @@ function SpatialRoad3DItem({
               )}
 
               {/* Animated Traffic Flows */}
-              <AnimatedRoadTraffic3D
-                width={len}
-                depth={road.width}
-                isHighway={road.type === 43}
-              />
+              {showTraffic && (
+                <AnimatedRoadTraffic3D
+                  width={len}
+                  depth={road.width}
+                  isHighway={road.type === 43}
+                />
+              )}
             </group>
 
             {/* Elevated Structural Concrete Support Pillars / Piers */}
@@ -655,11 +743,13 @@ function ElevatedTerrainGround({
   size = 600,
   onClick,
   isSubterranean = false,
+  showGrid = true,
 }: {
   terrain?: Map<string, number>;
   size?: number;
   onClick: (e: { point: THREE.Vector3; stopPropagation: () => void; nativeEvent?: MouseEvent }) => void;
   isSubterranean?: boolean;
+  showGrid?: boolean;
 }) {
   const segments = Math.min(250, Math.max(100, Math.floor(size / 4)));
 
@@ -728,17 +818,19 @@ function ElevatedTerrainGround({
       </mesh>
 
       {/* 2. Elevated Wireframe Grid lines conforming to the raised terrain */}
-      <mesh
-        geometry={geom}
-        position={[0, 0.03, 0]}
-      >
-        <meshBasicMaterial
-          color={isSubterranean ? "#38bdf8" : "#38bdf8"}
-          wireframe
-          transparent
-          opacity={isSubterranean ? 0.35 : 0.18}
-        />
-      </mesh>
+      {showGrid && (
+        <mesh
+          geometry={geom}
+          position={[0, 0.03, 0]}
+        >
+          <meshBasicMaterial
+            color={isSubterranean ? "#38bdf8" : "#38bdf8"}
+            wireframe
+            transparent
+            opacity={isSubterranean ? 0.35 : 0.18}
+          />
+        </mesh>
+      )}
 
       {/* Outer buffer plane */}
       {!isSubterranean && (
@@ -772,9 +864,11 @@ function CameraFOVUpdater({ fov }: { fov: number }) {
 function CameraPresetHandler({
   presetTrigger,
   orbitRef,
+  dynamicGridSize = 600,
 }: {
   presetTrigger?: { type: "top" | "iso" | "street" | "reset"; timestamp: number } | null;
   orbitRef: React.RefObject<OrbitControlsImpl>;
+  dynamicGridSize?: number;
 }) {
   const { camera } = useThree();
 
@@ -782,15 +876,16 @@ function CameraPresetHandler({
     if (!presetTrigger) return;
     const controls = orbitRef.current;
     const { type } = presetTrigger;
+    const sizeScale = Math.max(1, dynamicGridSize / 600);
 
     if (type === "top") {
-      camera.position.set(0, 110, 0.01);
+      camera.position.set(0, Math.max(120, dynamicGridSize * 0.75), 0.01);
       if (controls) {
         controls.target.set(0, 0, 0);
         controls.update();
       }
     } else if (type === "iso") {
-      camera.position.set(45, 45, 45);
+      camera.position.set(45 * sizeScale, 45 * sizeScale, 45 * sizeScale);
       if (controls) {
         controls.target.set(0, 0, 0);
         controls.update();
@@ -802,13 +897,13 @@ function CameraPresetHandler({
         controls.update();
       }
     } else if (type === "reset") {
-      camera.position.set(0, 40, 50);
+      camera.position.set(0, 50 * sizeScale, 70 * sizeScale);
       if (controls) {
         controls.target.set(0, 0, 0);
         controls.update();
       }
     }
-  }, [presetTrigger, camera, orbitRef]);
+  }, [presetTrigger, camera, orbitRef, dynamicGridSize]);
 
   return null;
 }
@@ -836,10 +931,12 @@ export function FreeformCanvas3D({
   cameraFov = 45,
   cameraPresetTrigger = null,
   showGridOverlay = true,
+  showTraffic = true,
   snapEnabled = true,
   hideZones = false,
   viewCutawayLevel = null,
   onViewCutawayLevelChange,
+  armedUrl = null,
 }: FreeformCanvas3DProps) {
   const orbitRef = useRef<OrbitControlsImpl>(null!);
   const [transformMode, setTransformMode] = useState<"translate" | "rotate" | "scale">("translate");
@@ -949,6 +1046,8 @@ export function FreeformCanvas3D({
       rotation: 0,
       footprint: { width: 10, depth: 10 },
       area: 100,
+      model_url: armedUrl ?? undefined,
+      attributes: armedUrl ? { model_url: armedUrl, modelUrl: armedUrl } : undefined,
     };
 
     onAddMesh(newMesh);
@@ -1133,7 +1232,7 @@ export function FreeformCanvas3D({
       </div>
 
       <Canvas
-        camera={{ position: [0, 40, 50], fov: cameraFov }}
+        camera={{ position: [0, 50, 70], fov: cameraFov, near: 0.1, far: 10000 }}
         shadows={!isLargeMap && !isSubterraneanMode}
         onPointerDown={(e) => {
           handlePointerDown(e);
@@ -1144,7 +1243,7 @@ export function FreeformCanvas3D({
         }}
       >
         <CameraFOVUpdater fov={cameraFov} />
-        <CameraPresetHandler presetTrigger={cameraPresetTrigger} orbitRef={orbitRef} />
+        <CameraPresetHandler presetTrigger={cameraPresetTrigger} orbitRef={orbitRef} dynamicGridSize={dynamicGridSize} />
         <LODTracker>
           {() => (
             <>
@@ -1170,6 +1269,7 @@ export function FreeformCanvas3D({
                 size={dynamicGridSize}
                 onClick={handleGroundClick}
                 isSubterranean={isSubterraneanMode}
+                showGrid={showGridOverlay}
               />
 
               {/* 3D Freeform Multi-segment Roads (Filtered by viewCutawayLevel) */}
@@ -1181,6 +1281,7 @@ export function FreeformCanvas3D({
                   isSelected={road.id === selectedRoadId}
                   onSelect={onSelectRoad}
                   viewCutawayLevel={viewCutawayLevel}
+                  showTraffic={showTraffic}
                 />
               ))}
 
@@ -1213,6 +1314,7 @@ export function FreeformCanvas3D({
                         transformMode={transformMode}
                         totalMeshCount={meshes.length}
                         snapEnabled={snapEnabled}
+                        showTraffic={showTraffic}
                       />
                     )}
                   </>
@@ -1234,6 +1336,7 @@ export function FreeformCanvas3D({
                       transformMode={transformMode}
                       totalMeshCount={meshes.length}
                       snapEnabled={snapEnabled}
+                      showTraffic={showTraffic}
                     />
                   ))
                 )
@@ -1242,8 +1345,8 @@ export function FreeformCanvas3D({
               <OrbitControls
                 ref={orbitRef}
                 makeDefault
-                minDistance={5}
-                maxDistance={350}
+                minDistance={2}
+                maxDistance={5000}
                 maxPolarAngle={isSubterraneanMode ? Math.PI - 0.05 : Math.PI / 2 - 0.05}
               />
             </>

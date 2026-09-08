@@ -6,6 +6,7 @@
 import { useState } from "react";
 import type { SpatialZone, ZoneType } from "../../types/spatial";
 import { zoneLabel } from "../../utils/spatial";
+import { DEFAULT_TILE_METER_SIZE } from "../../utils/freeform";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -34,8 +35,8 @@ export function CreateCustomZoneModal({
   const [floors, setFloors] = useState(8);
   const [density, setDensity] = useState(2.0);
   const [intensity, setIntensity] = useState(1.5);
-  const [width, setWidth] = useState(4.0);
-  const [depth, setDepth] = useState(4.0);
+  const [widthMeters, setWidthMeters] = useState(30.0);
+  const [depthMeters, setDepthMeters] = useState(30.0);
   const [rotation] = useState(0);
   const [modelUrl, setModelUrl] = useState("");
 
@@ -46,14 +47,17 @@ export function CreateCustomZoneModal({
     const isPark = type === 3;
     const finalFloors = isPark ? 0 : floors;
 
+    const widthCells = Math.max(0.5, widthMeters / DEFAULT_TILE_METER_SIZE);
+    const depthCells = Math.max(0.5, depthMeters / DEFAULT_TILE_METER_SIZE);
+
     const newZone: SpatialZone = {
       id: `z_custom_${Date.now()}`,
       type,
       position: { x: 0, y: 0 }, // Center of world / viewport
       rotation: rotation || 0,
       footprint: {
-        width: Math.max(1, width),
-        depth: Math.max(1, depth),
+        width: widthCells,
+        depth: depthCells,
       },
       attributes: {
         name: name.trim() || zoneLabel(type),
@@ -178,28 +182,36 @@ export function CreateCustomZoneModal({
           )}
 
           {/* Footprint Dimensions */}
-          <div className="grid grid-cols-2 gap-2.5 rounded-lg border border-border/60 bg-muted/20 p-3">
-            <div className="space-y-1">
-              <label className="font-mono text-[10px] text-muted-foreground">Width (m)</label>
-              <Input
-                type="number"
-                step="0.5"
-                min="1"
-                value={width}
-                onChange={(e) => setWidth(Number.parseFloat(e.target.value) || 1)}
-                className="h-8 font-mono text-xs bg-background"
-              />
+          <div className="space-y-1.5 rounded-lg border border-border/60 bg-muted/20 p-3">
+            <div className="flex items-center justify-between text-[11px]">
+              <span className="font-semibold text-foreground">Footprint Dimensions</span>
+              <span className="font-mono text-[10px] text-primary font-bold">
+                {widthMeters}m × {depthMeters}m ({(widthMeters / 10).toFixed(1)} × {(depthMeters / 10).toFixed(1)} tiles)
+              </span>
             </div>
-            <div className="space-y-1">
-              <label className="font-mono text-[10px] text-muted-foreground">Depth (m)</label>
-              <Input
-                type="number"
-                step="0.5"
-                min="1"
-                value={depth}
-                onChange={(e) => setDepth(Number.parseFloat(e.target.value) || 1)}
-                className="h-8 font-mono text-xs bg-background"
-              />
+            <div className="grid grid-cols-2 gap-2.5">
+              <div className="space-y-1">
+                <label className="font-mono text-[10px] text-muted-foreground">Width (m)</label>
+                <Input
+                  type="number"
+                  step="5"
+                  min="5"
+                  value={widthMeters}
+                  onChange={(e) => setWidthMeters(Number.parseFloat(e.target.value) || 5)}
+                  className="h-8 font-mono text-xs bg-background"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="font-mono text-[10px] text-muted-foreground">Depth (m)</label>
+                <Input
+                  type="number"
+                  step="5"
+                  min="5"
+                  value={depthMeters}
+                  onChange={(e) => setDepthMeters(Number.parseFloat(e.target.value) || 5)}
+                  className="h-8 font-mono text-xs bg-background"
+                />
+              </div>
             </div>
           </div>
 

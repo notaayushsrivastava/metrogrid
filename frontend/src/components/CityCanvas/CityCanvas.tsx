@@ -77,6 +77,8 @@ interface CityCanvasProps {
   activeTool?: string;
   snapEnabled?: boolean;
   readOnly?: boolean;
+  showGridOverlay?: boolean;
+  showTraffic?: boolean;
 }
 
 interface Viewport {
@@ -169,7 +171,8 @@ function drawTileWithTraffic(
   py: number,
   size: number,
   rotationDeg = 0,
-  trafficOffset = 0
+  trafficOffset = 0,
+  showTraffic = true
 ): void {
   const meta = TILE_META[type as Exclude<TileType, 0>];
   const inset = 1;
@@ -227,25 +230,27 @@ function drawTileWithTraffic(
     }
 
     // Landing Screen-style Animated Traffic Movement
-    ctx.strokeStyle = type === 43 ? "#ffd166" : "#7cffb2";
-    ctx.lineWidth = Math.max(1.5, size * 0.07);
-    ctx.setLineDash([size * 0.16, size * 0.26]);
-    ctx.lineDashOffset = -trafficOffset;
+    if (showTraffic) {
+      ctx.strokeStyle = type === 43 ? "#ffd166" : "#7cffb2";
+      ctx.lineWidth = Math.max(1.5, size * 0.07);
+      ctx.setLineDash([size * 0.16, size * 0.26]);
+      ctx.lineDashOffset = -trafficOffset;
 
-    for (const [nx, ny] of neighbors) {
-      const n = tiles.get(tileKey(nx, ny));
-      if (n && isRoadType(n.type)) {
-        const dx = nx - x;
-        const dy = ny - y;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(cx + dx * (size / 2), cy + dy * (size / 2));
-        ctx.stroke();
+      for (const [nx, ny] of neighbors) {
+        const n = tiles.get(tileKey(nx, ny));
+        if (n && isRoadType(n.type)) {
+          const dx = nx - x;
+          const dy = ny - y;
+          ctx.beginPath();
+          ctx.moveTo(cx, cy);
+          ctx.lineTo(cx + dx * (size / 2), cy + dy * (size / 2));
+          ctx.stroke();
+        }
       }
-    }
 
-    ctx.setLineDash([]);
-    ctx.lineDashOffset = 0;
+      ctx.setLineDash([]);
+      ctx.lineDashOffset = 0;
+    }
     if (rotated) ctx.restore();
     return;
   }
@@ -363,6 +368,8 @@ export function CityCanvas({
   activeTool,
   snapEnabled = true,
   readOnly = false,
+  showGridOverlay = true,
+  showTraffic = true,
 }: CityCanvasProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -471,7 +478,9 @@ export function CityCanvas({
     ctx.fillRect(origin.px - 1, origin.py - 6, 2, 12);
     ctx.fillRect(origin.px - 6, origin.py - 1, 12, 2);
 
-    drawGrid(ctx, cam, cssWidth, cssHeight);
+    if (showGridOverlay) {
+      drawGrid(ctx, cam, cssWidth, cssHeight);
+    }
 
     // Chunked viewport culling: only tiles in visible chunks are painted.
     const cell = cellSize(cam);
@@ -493,7 +502,8 @@ export function CityCanvas({
           py,
           cell,
           entry.tile?.transform?.rotation?.y ?? 0,
-          trafficOffset
+          trafficOffset,
+          showTraffic
         );
       }
     }
@@ -838,6 +848,7 @@ export function CityCanvas({
           onRemoveRoad={(id) => onRemoveRoad?.(id)}
           snapEnabled={snapEnabled}
           readOnly={readOnly}
+          showTraffic={showTraffic}
         />
       )}
 

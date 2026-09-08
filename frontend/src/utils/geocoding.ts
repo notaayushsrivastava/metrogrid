@@ -78,7 +78,7 @@ export async function searchLocations(query: string, signal?: AbortSignal): Prom
           // If the bounding box is too huge (e.g. whole country), clamp to a city-scale neighborhood
           const spanDegLat = north - south;
           const spanDegLon = east - west;
-          if (spanDegLat > 0.08 || spanDegLon > 0.08) {
+          if (spanDegLat > 0.04 || spanDegLon > 0.04) {
             bounds = createCenteredBounds(lat, lon, 600);
           } else {
             bounds = { north, south, east, west };

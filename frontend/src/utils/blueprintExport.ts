@@ -8,8 +8,9 @@
 import type { GridState, GlobalScores } from "../types/city";
 import type { SpatialZone, SpatialRoad } from "../types/spatial";
 import { TILE_META } from "../config/tiles";
-import { zoneColor, zoneCorners, zoneLabel } from "./spatial";
-import { getRoadLevel, LEVEL_SHORT_BADGES } from "./freeformRoads";
+import { zoneColor, zoneLabel, deg2rad } from "./spatial";
+import { getRoadLevel } from "./freeformRoads";
+import { DEFAULT_TILE_METER_SIZE } from "./freeform";
 
 interface ExportBlueprintOptions {
   cityName?: string | null;
@@ -33,13 +34,88 @@ const ZONE_CODES: Record<number, string> = {
   43: "HWY-43",
 };
 
-const ROAD_NAMES: Record<number, string> = {
-  40: "PEDESTRIAN CORRIDOR",
-  41: "LOCAL STREET",
-  42: "TRANSIT ARTERY",
-  43: "EXPRESS HIGHWAY",
-  4: "CONNECTIVITY ROAD",
+export interface BlueprintLabel {
+  id: string;
+  x: number;
+  y: number;
+  localEffect: number;
+  category: "zone" | "road_node" | "tile";
+  type: number;
+  render: (
+    ctx: CanvasRenderingContext2D,
+    toPx: (wx: number, wy: number) => { x: number; y: number },
+    scale: number
+  ) => void;
+}
+
+export const ROAD_NODE_SYMBOLS: Record<number, string> = {
+  43: "HWY",
+  42: "TRN",
+  41: "LOC",
+  4: "ROD",
+  40: "PED",
 };
+
+export const TILE_NODE_SYMBOLS: Record<number, string> = {
+  1: "R",
+  2: "C",
+  3: "P",
+  5: "I",
+};
+
+/**
+ * Filters repetitive label candidates using spatial clustering and local effect ranking.
+ * "if at a single point, more than 5 labels are present, use the one with the highest local effect."
+ */
+export function filterBlueprintLabels(labels: BlueprintLabel[], radius = 3.2): BlueprintLabel[] {
+  if (labels.length <= 1) return labels;
+
+  const suppressed = new Set<string>();
+
+  for (let i = 0; i < labels.length; i++) {
+    const l1 = labels[i];
+    if (suppressed.has(l1.id)) continue;
+
+    // Find all active candidate neighbors within distance <= radius
+    const neighbors: BlueprintLabel[] = [];
+    for (let j = 0; j < labels.length; j++) {
+      const l2 = labels[j];
+      if (suppressed.has(l2.id)) continue;
+      const dist = Math.hypot(l1.x - l2.x, l1.y - l2.y);
+      if (dist <= radius) {
+        neighbors.push(l2);
+      }
+    }
+
+    // "if at a single point, more than 5 labels are present, use the one with the highest local effect."
+    if (neighbors.length > 5) {
+      let best = neighbors[0];
+      for (let k = 1; k < neighbors.length; k++) {
+        const candidate = neighbors[k];
+        if (candidate.localEffect > best.localEffect) {
+          best = candidate;
+        } else if (candidate.localEffect === best.localEffect) {
+          const catPriority = (cat: string) => (cat === "zone" ? 3 : cat === "road_node" ? 2 : 1);
+          if (catPriority(candidate.category) > catPriority(best.category)) {
+            best = candidate;
+          } else if (candidate.id < best.id) {
+            best = candidate;
+          }
+        }
+      }
+
+      // Suppress all candidates in this congested cluster except the best
+      for (const n of neighbors) {
+        if (n.id !== best.id) {
+          suppressed.add(n.id);
+        }
+      }
+    }
+  }
+
+  return labels.filter((l) => !suppressed.has(l.id));
+}
+
 
 export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): void {
   const cityName = options.cityName || "METROPOLIS";
@@ -79,10 +155,13 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
   });
 
   zones.forEach((z) => {
-    const w = z.footprint.width / 2;
-    const d = z.footprint.depth / 2;
-    includePt(z.position.x - w, z.position.y - d);
-    includePt(z.position.x + w, z.position.y + d);
+    const rad = deg2rad(z.rotation || 0);
+    const cos = Math.abs(Math.cos(rad));
+    const sin = Math.abs(Math.sin(rad));
+    const hw = (z.footprint.width * cos + z.footprint.depth * sin) / 2;
+    const hd = (z.footprint.width * sin + z.footprint.depth * cos) / 2;
+    includePt(z.position.x - hw, z.position.y - hd);
+    includePt(z.position.x + hw, z.position.y + hd);
   });
 
   roads.forEach((r) => {
@@ -128,6 +207,8 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
     x: drawCenterX + (wx - centerX) * scale,
     y: drawCenterY + (wy - centerY) * scale,
   });
+
+  const labelCandidates: BlueprintLabel[] = [];
 
   // 3. Render Blueprint Background
   const bgGrad = ctx.createLinearGradient(0, 0, canvasWidth, canvasHeight);
@@ -247,7 +328,7 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
   sortedBlueprintRoads.forEach((road) => {
     if (road.points.length < 2) return;
     const pts = road.points.map((pt) => toPx(pt.x, pt.y));
-    const roadWidthPx = Math.max(6, (road.width / 10.0) * scale * 3.5);
+    const roadWidthPx = Math.max(4, (road.width / 10.0) * scale);
     const level = getRoadLevel(road);
     const isElevated = level > 0 || (road.elevation !== undefined && road.elevation > 1.0);
     const isTunnel = level < 0 || (road.elevation !== undefined && road.elevation < -1.0);
@@ -332,20 +413,78 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
     ctx.stroke();
     ctx.setLineDash([]);
 
-    // Road Tag Annotation with Infrastructure Level Badge
-    if (pts.length >= 2) {
-      const midIdx = Math.floor(pts.length / 2);
-      const mid = pts[midIdx];
-      ctx.font = "bold 11px monospace";
-      ctx.fillStyle = isTunnel ? "#c084fc" : isElevated ? "#38bdf8" : isRamp ? "#fcd34d" : "#e2e8f0";
-      ctx.textAlign = "center";
-      const name = ROAD_NAMES[road.type] || "ROAD";
-      const levelBadge = isRamp
-        ? `[RAMP L${road.startLevel ?? 0}→L${road.endLevel ?? 1}]`
-        : `[${LEVEL_SHORT_BADGES[level]}]`;
-      ctx.fillText(`${levelBadge} ${name} • ${road.width}m`, mid.x, mid.y - roadWidthPx / 2 - 6);
-    }
     ctx.restore();
+  });
+
+  // Collect road network nodes for symbolic labeling
+  const roadNodeMap = new Map<string, { x: number; y: number; road: SpatialRoad }>();
+  roads.forEach((road) => {
+    if (road.points.length < 2) return;
+    const registerNode = (pt: { x: number; y: number }) => {
+      const key = `${Math.round(pt.x * 2) / 2},${Math.round(pt.y * 2) / 2}`;
+      const existing = roadNodeMap.get(key);
+      if (!existing || (road.type === 43 && existing.road.type !== 43) || (road.type === 42 && existing.road.type < 42)) {
+        roadNodeMap.set(key, { x: pt.x, y: pt.y, road });
+      }
+    };
+    registerNode(road.points[0]);
+    registerNode(road.points[road.points.length - 1]);
+    if (road.points.length > 2) {
+      for (let i = 1; i < road.points.length - 1; i++) {
+        registerNode(road.points[i]);
+      }
+    }
+  });
+
+  roadNodeMap.forEach(({ x, y, road }, key) => {
+    const level = getRoadLevel(road);
+    const isElevated = level > 0;
+    const isTunnel = level < 0;
+    const isRamp = !!road.isRamp;
+    const levelBonus = Math.abs(level) * 20;
+
+    let baseEffect = 45;
+    if (road.type === 43) baseEffect = 95;
+    else if (road.type === 42) baseEffect = 80;
+    else if (road.type === 4) baseEffect = 55;
+    else if (road.type === 40) baseEffect = 30;
+
+    labelCandidates.push({
+      id: `road_node_${key}`,
+      x,
+      y,
+      localEffect: baseEffect + levelBonus,
+      category: "road_node",
+      type: road.type,
+      render: (ctx, toPx, scale) => {
+        const p = toPx(x, y);
+        const symbolText = ROAD_NODE_SYMBOLS[road.type] || "ROD";
+        const badgeText = isRamp ? "RMP" : symbolText;
+        const levelTag = isElevated ? `+${level}` : isTunnel ? `${level}` : "";
+        const fullText = levelTag ? `${badgeText} ${levelTag}` : badgeText;
+
+        ctx.save();
+        const fontSize = Math.max(8, Math.min(10, Math.round(scale * 0.28)));
+        ctx.font = `bold ${fontSize}px "JetBrains Mono", monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+
+        const textWidth = ctx.measureText ? ctx.measureText(fullText).width : fullText.length * fontSize * 0.6;
+        const badgeW = Math.max(22, textWidth + 8);
+        const badgeH = Math.max(14, fontSize + 6);
+
+        ctx.fillStyle = "rgba(7, 21, 43, 0.92)";
+        ctx.fillRect(p.x - badgeW / 2, p.y - badgeH / 2, badgeW, badgeH);
+
+        ctx.strokeStyle = isTunnel ? "#c084fc" : isRamp ? "#f59e0b" : road.type === 43 ? "#ffd166" : isElevated ? "#38bdf8" : "#94a3b8";
+        ctx.lineWidth = 1.2;
+        ctx.strokeRect(p.x - badgeW / 2, p.y - badgeH / 2, badgeW, badgeH);
+
+        ctx.fillStyle = isTunnel ? "#e9d5ff" : isRamp ? "#fcd34d" : road.type === 43 ? "#fef08a" : isElevated ? "#bae6fd" : "#f8fafc";
+        ctx.fillText(fullText, p.x, p.y);
+        ctx.restore();
+      },
+    });
   });
 
   // 7. Draw Grid Tiles (Non-road zones)
@@ -394,16 +533,38 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
       ctx.lineTo(p.x + s / 2, p.y + s / 2 + 3);
       ctx.stroke();
 
-      // Zone Label & Code
-      if (s > 24) {
-        ctx.font = "bold 10px monospace";
-        ctx.fillStyle = "#f8fafc";
-        ctx.textAlign = "center";
-        ctx.textBaseline = "middle";
-        ctx.fillText(ZONE_CODES[tile.type] || "ZON", p.x + s / 2, p.y + s / 2 - 6);
-        ctx.font = "8px monospace";
-        ctx.fillStyle = "#94a3b8";
-        ctx.fillText(`${(scale).toFixed(0)}m`, p.x + s / 2, p.y + s / 2 + 6);
+      // Repetitive label as symbolic node marker candidate
+      if (s >= 14) {
+        const localEffect = tile.type === 5 ? 35 : tile.type === 2 ? 30 : tile.type === 1 ? 25 : 15;
+        labelCandidates.push({
+          id: `tile_${key}`,
+          x: gx + 0.5,
+          y: gy + 0.5,
+          localEffect,
+          category: "tile",
+          type: tile.type,
+          render: (ctx, toPx, scale) => {
+            const pt = toPx(gx + 0.5, gy + 0.5);
+            const sym = TILE_NODE_SYMBOLS[tile.type] || "?";
+            ctx.save();
+            const r = Math.max(5, Math.min(8.5, scale * 0.2));
+            ctx.beginPath();
+            ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
+            ctx.fillStyle = "rgba(7, 21, 43, 0.9)";
+            ctx.fill();
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            const fSize = Math.max(7, Math.min(10, Math.round(r * 1.3)));
+            ctx.font = `bold ${fSize}px "JetBrains Mono", monospace`;
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(sym, pt.x, pt.y);
+            ctx.restore();
+          },
+        });
       }
       ctx.restore();
     }
@@ -411,85 +572,177 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
 
   // 8. Draw Freeform Spatial Zones
   zones.forEach((zone) => {
-    const corners = zoneCorners(zone).map((c) => toPx(c.x, c.y));
     const center = toPx(zone.position.x, zone.position.y);
     const color = zoneColor(zone.type);
+    const widthPx = zone.footprint.width * scale;
+    const depthPx = zone.footprint.depth * scale;
+    const hwPx = widthPx / 2;
+    const hdPx = depthPx / 2;
+    const minDim = Math.min(widthPx, depthPx);
 
     ctx.save();
-    // Zone perimeter polygon
-    ctx.beginPath();
-    corners.forEach((c, i) => {
-      if (i === 0) ctx.moveTo(c.x, c.y);
-      else ctx.lineTo(c.x, c.y);
-    });
-    ctx.closePath();
-
-    // Fill
-    ctx.fillStyle = "rgba(14, 40, 75, 0.8)";
-    ctx.fill();
-
-    // Crosshatch interior
-    ctx.save();
-    ctx.clip();
-    ctx.strokeStyle = "rgba(56, 189, 248, 0.25)";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (let x = -200; x < 200; x += 10) {
-      ctx.moveTo(center.x + x - 200, center.y - 200);
-      ctx.lineTo(center.x + x + 200, center.y + 200);
+    if (ctx.translate && ctx.rotate) {
+      ctx.translate(center.x, center.y);
+      ctx.rotate(deg2rad(zone.rotation || 0));
     }
-    ctx.stroke();
-    ctx.restore();
 
-    // Technical drafting outline (Double stroke)
+    // 1. Blueprint Background Fill (Solid drafting base + tinted category color)
+    ctx.fillStyle = "#08162d";
+    ctx.fillRect(-hwPx, -hdPx, widthPx, depthPx);
+    ctx.fillStyle = hexToRgba(color, 0.28);
+    ctx.fillRect(-hwPx, -hdPx, widthPx, depthPx);
+
+    // 2. Technical crosshatch inside clipped zone (only when large enough)
+    if (minDim >= 18) {
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(-hwPx, -hdPx, widthPx, depthPx);
+      ctx.clip();
+      ctx.strokeStyle = "rgba(56, 189, 248, 0.16)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      const hatchStep = Math.max(10, Math.round(scale * 0.4));
+      const maxExtent = hwPx + hdPx;
+      for (let d = -maxExtent; d <= maxExtent; d += hatchStep) {
+        ctx.moveTo(-hwPx + d, -hdPx);
+        ctx.lineTo(-hwPx + d + depthPx, hdPx);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3. Primary Solid Outer Border
     ctx.strokeStyle = color;
     ctx.lineWidth = 2.2;
-    ctx.stroke();
+    ctx.strokeRect(-hwPx, -hdPx, widthPx, depthPx);
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.lineWidth = 1;
-    ctx.setLineDash([4, 4]);
-    ctx.stroke();
-    ctx.setLineDash([]);
+    // 4. Subtle Inner Inset Drafting Line (only if zone is large enough)
+    if (minDim >= 22) {
+      const inset = Math.min(3.5, minDim * 0.08);
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.35)";
+      ctx.lineWidth = 0.8;
+      ctx.setLineDash([3, 3]);
+      ctx.strokeRect(-hwPx + inset, -hdPx + inset, widthPx - inset * 2, depthPx - inset * 2);
+      ctx.setLineDash([]);
+    }
 
-    // Corner drafting ticks
-    corners.forEach((c) => {
+    // 5. Center Registration Tick
+    if (minDim >= 26) {
+      const tickLen = Math.min(6, minDim * 0.15);
+      ctx.strokeStyle = "#38bdf8";
+      ctx.lineWidth = 1.2;
       ctx.beginPath();
-      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
-      ctx.fillStyle = "#38bdf8";
-      ctx.fill();
-    });
+      ctx.moveTo(-tickLen, 0);
+      ctx.lineTo(tickLen, 0);
+      ctx.moveTo(0, -tickLen);
+      ctx.lineTo(0, tickLen);
+      ctx.stroke();
+    }
 
-    // Center registration tick
-    ctx.strokeStyle = "#38bdf8";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(center.x - 6, center.y);
-    ctx.lineTo(center.x + 6, center.y);
-    ctx.moveTo(center.x, center.y - 6);
-    ctx.lineTo(center.x, center.y + 6);
-    ctx.stroke();
-
-    // Technical Blueprint Zone Callout Badge
-    const code = ZONE_CODES[zone.type] || "BLD-00";
-    const label = zoneLabel(zone.type);
-    const area = Math.round(zone.footprint.width * zone.footprint.depth);
-
-    ctx.font = "bold 11px monospace";
-    ctx.fillStyle = "#ffffff";
-    ctx.textAlign = "center";
-    ctx.fillText(`[${code}] ${label.toUpperCase()}`, center.x, center.y - 10);
-
-    ctx.font = "9px monospace";
-    ctx.fillStyle = "#38bdf8";
-    ctx.fillText(
-      `${zone.footprint.width.toFixed(1)}m × ${zone.footprint.depth.toFixed(1)}m (${area}m²)`,
-      center.x,
-      center.y + 12
-    );
+    // 6. Corner Drafting Ticks
+    if (minDim >= 22) {
+      const cornersLocal: [number, number][] = [
+        [-hwPx, -hdPx],
+        [hwPx, -hdPx],
+        [hwPx, hdPx],
+        [-hwPx, hdPx],
+      ];
+      cornersLocal.forEach(([cx, cy]) => {
+        ctx.beginPath();
+        ctx.arc(cx, cy, 2.5, 0, Math.PI * 2);
+        ctx.fillStyle = "#38bdf8";
+        ctx.fill();
+      });
+    }
 
     ctx.restore();
+
+    // 7. Register Zone Label Candidate
+    const area = zone.footprint.width * zone.footprint.depth;
+    const baseEffect = zone.type === 5 ? 85 : zone.type === 2 ? 75 : zone.type === 1 ? 60 : 40;
+    const localEffect = baseEffect + Math.min(100, Math.sqrt(area) * 15);
+
+    labelCandidates.push({
+      id: `zone_${zone.id}`,
+      x: zone.position.x,
+      y: zone.position.y,
+      localEffect,
+      category: "zone",
+      type: zone.type,
+      render: (ctx, toPx, scale) => {
+        const center = toPx(zone.position.x, zone.position.y);
+        ctx.save();
+        if (ctx.translate && ctx.rotate) {
+          ctx.translate(center.x, center.y);
+          ctx.rotate(deg2rad(zone.rotation || 0));
+        }
+
+        const widthPx = zone.footprint.width * scale;
+        const depthPx = zone.footprint.depth * scale;
+        const minDim = Math.min(widthPx, depthPx);
+
+        const code = ZONE_CODES[zone.type] || "BLD-01";
+        const label = zone.attributes?.name || zoneLabel(zone.type);
+        const widthM = zone.footprint.width * DEFAULT_TILE_METER_SIZE;
+        const depthM = zone.footprint.depth * DEFAULT_TILE_METER_SIZE;
+        const areaM2 = Math.round(widthM * depthM);
+
+        const availW = widthPx - 8;
+        const availH = depthPx - 8;
+
+        if (availW >= 14 && availH >= 14) {
+          if (availW < 45 || availH < 22) {
+            // Tier 1: Single character glyph for very tight cells
+            const glyph = zone.type === 1 ? "R" : zone.type === 2 ? "C" : zone.type === 3 ? "P" : "I";
+            ctx.font = `bold ${Math.max(9, Math.min(13, Math.round(minDim * 0.45)))}px "JetBrains Mono", monospace`;
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(glyph, 0, 0);
+          } else if (availW < 80 || availH < 34) {
+            // Tier 2: Compact short code [RES]
+            ctx.font = `bold ${Math.max(8, Math.min(11, Math.round(minDim * 0.3)))}px "JetBrains Mono", monospace`;
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(code, 0, 0);
+          } else {
+            // Tier 3: Full architectural label and real-world meter dimensions
+            const titleFontSize = Math.max(9, Math.min(13, Math.round(scale * 0.35)));
+            ctx.font = `bold ${titleFontSize}px "JetBrains Mono", monospace`;
+            ctx.fillStyle = "#ffffff";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+
+            const showSubtitle = availH >= 42;
+            const titleY = showSubtitle ? -Math.round(titleFontSize * 0.65) : 0;
+            const fullText = `[${code}] ${label.toUpperCase()}`;
+            const measured = ctx.measureText ? ctx.measureText(fullText).width : fullText.length * titleFontSize * 0.6;
+            const titleText = measured <= availW ? fullText : `[${code}]`;
+            ctx.fillText(titleText, 0, titleY);
+
+            if (showSubtitle) {
+              const subFontSize = Math.max(8, titleFontSize - 2);
+              ctx.font = `${subFontSize}px "JetBrains Mono", monospace`;
+              ctx.fillStyle = "#38bdf8";
+              const dimText = `${widthM.toFixed(0)}m × ${depthM.toFixed(0)}m (${areaM2.toLocaleString()}m²)`;
+              const shortDimText = `${widthM.toFixed(0)}×${depthM.toFixed(0)}m`;
+              const subMeasured = ctx.measureText ? ctx.measureText(dimText).width : dimText.length * subFontSize * 0.6;
+              const subText = subMeasured <= availW ? dimText : shortDimText;
+              ctx.fillText(subText, 0, Math.round(titleFontSize * 0.85));
+            }
+          }
+        }
+
+        ctx.restore();
+      },
+    });
   });
+
+  // 8b. Declutter Labels & Node Symbols (Highest Local Effect at Congested Points)
+  // "if at a single point, more than 5 labels are present, use the one with the highest local effect."
+  const filteredLabels = filterBlueprintLabels(labelCandidates, 3.2);
+  filteredLabels.forEach((lbl) => lbl.render(ctx, toPx, scale));
 
   // 9. Outer Architectural Sheet Border & Registration Frame
   ctx.save();
@@ -669,7 +922,15 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
   // 12. Graphic Scale Bar (Bottom-Left Corner)
   const scaleBarX = marginX + 30;
   const scaleBarY = canvasHeight - marginY - 30;
-  const barSegmentW = 50;
+
+  // Determine an appropriate meter increment based on scale (1 cell = 10m = scale pixels)
+  let metersPerSegment = 25;
+  if (scale >= 25) metersPerSegment = 10;
+  else if (scale >= 12) metersPerSegment = 25;
+  else if (scale >= 6) metersPerSegment = 50;
+  else metersPerSegment = 100;
+
+  const barSegmentW = (metersPerSegment / DEFAULT_TILE_METER_SIZE) * scale;
 
   ctx.save();
   ctx.font = "bold 10px monospace";
@@ -687,20 +948,20 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
 
     ctx.font = "9px monospace";
     ctx.fillStyle = "#f8fafc";
-    ctx.fillText(`${i * 25}m`, x, scaleBarY + 20);
+    ctx.fillText(`${i * metersPerSegment}m`, x, scaleBarY + 20);
   }
-  ctx.fillText("100m", scaleBarX + 4 * barSegmentW, scaleBarY + 20);
+  ctx.fillText(`${4 * metersPerSegment}m`, scaleBarX + 4 * barSegmentW, scaleBarY + 20);
   ctx.restore();
 
   // 13. Blueprint Legend Block (Top-Right Corner)
   const legX = canvasWidth - marginX - 260;
   const legY = marginY + 25;
   ctx.save();
-  ctx.fillStyle = "rgba(9, 28, 56, 0.85)";
-  ctx.fillRect(legX, legY, 240, 140);
+  ctx.fillStyle = "rgba(9, 28, 56, 0.88)";
+  ctx.fillRect(legX, legY, 245, 175);
   ctx.strokeStyle = "rgba(56, 189, 248, 0.6)";
   ctx.lineWidth = 1;
-  ctx.strokeRect(legX, legY, 240, 140);
+  ctx.strokeRect(legX, legY, 245, 175);
 
   ctx.font = "bold 11px monospace";
   ctx.fillStyle = "#38bdf8";
@@ -708,24 +969,26 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
   ctx.fillText("ARCHITECTURAL LEGEND", legX + 12, legY + 20);
 
   const legendItems = [
-    { color: "#38bdf8", code: "RES-01", label: "Residential Zone" },
-    { color: "#06b6d4", code: "COM-02", label: "Commercial Zone" },
-    { color: "#4ade80", code: "PRK-03", label: "Park & Public Green" },
-    { color: "#f97316", code: "IND-05", label: "Industrial & Heavy" },
-    { color: "#fbbf24", code: "TRN-42", label: "Transit / Highway Grid" },
+    { color: "#38bdf8", sym: "R", code: "RES-01", label: "Residential" },
+    { color: "#06b6d4", sym: "C", code: "COM-02", label: "Commercial" },
+    { color: "#4ade80", sym: "P", code: "PRK-03", label: "Park & Public" },
+    { color: "#f97316", sym: "I", code: "IND-05", label: "Industrial" },
+    { color: "#ffd166", sym: "H", code: "HWY-43", label: "Express Highway" },
+    { color: "#38bdf8", sym: "T", code: "TRN-42", label: "Transit Artery" },
+    { color: "#94a3b8", sym: "S", code: "LOC-41", label: "Local Street" },
   ];
 
   legendItems.forEach((item, idx) => {
-    const itemY = legY + 40 + idx * 19;
+    const itemY = legY + 38 + idx * 19;
     ctx.fillStyle = item.color;
     ctx.fillRect(legX + 12, itemY - 9, 14, 11);
     ctx.strokeStyle = "#ffffff";
     ctx.lineWidth = 0.8;
     ctx.strokeRect(legX + 12, itemY - 9, 14, 11);
 
-    ctx.font = "9px monospace";
+    ctx.font = "bold 9px monospace";
     ctx.fillStyle = "#f8fafc";
-    ctx.fillText(`[${item.code}] ${item.label}`, legX + 34, itemY);
+    ctx.fillText(`[${item.sym}] ${item.label} (${item.code})`, legX + 32, itemY);
   });
   ctx.restore();
 
@@ -745,4 +1008,12 @@ export function exportArchitecturalBlueprint(options: ExportBlueprintOptions): v
   } catch (err) {
     console.error("Failed to export architectural blueprint:", err);
   }
+}
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }

@@ -44,11 +44,11 @@ const ZONE_OPTIONS: Array<{ type: ZoneType; label: string; color: string }> = [
 
 const ROTATION_PRESETS = [0, 45, 90, 180, 270];
 const SIZE_PRESETS = [
-  { label: "1×1", w: 1, d: 1 },
-  { label: "2×2", w: 2, d: 2 },
-  { label: "3×3", w: 3, d: 3 },
-  { label: "4×4", w: 4, d: 4 },
-  { label: "6×4", w: 6, d: 4 },
+  { label: "10×10m (1×1)", w: 1, d: 1 },
+  { label: "20×20m (2×2)", w: 2, d: 2 },
+  { label: "30×30m (3×3)", w: 3, d: 3 },
+  { label: "40×40m (4×4)", w: 4, d: 4 },
+  { label: "60×40m (6×4)", w: 6, d: 4 },
 ];
 
 export function ZoneInspectorPanel({
@@ -249,13 +249,13 @@ export function ZoneInspectorPanel({
               Position (X, Z Coordinates)
             </label>
             <span className="font-mono text-[10px] text-muted-foreground">
-              {posX}m, {posY}m
+              {(posX * 10).toFixed(0)}m, {(posY * 10).toFixed(0)}m (tiles {posX}, {posY})
             </span>
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                <span>X Position (m)</span>
+                <span>X ({(posX * 10).toFixed(0)}m)</span>
                 <div className="flex gap-0.5">
                   <button
                     type="button"
@@ -289,7 +289,7 @@ export function ZoneInspectorPanel({
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                <span>Z Position (m)</span>
+                <span>Z ({(posY * 10).toFixed(0)}m)</span>
                 <div className="flex gap-0.5">
                   <button
                     type="button"
@@ -402,20 +402,20 @@ export function ZoneInspectorPanel({
               Footprint & Resizing
             </label>
             <span className="font-mono text-xs font-bold text-primary">
-              {width}m × {depth}m ({(width * depth).toFixed(0)}m²)
+              {(width * 10).toFixed(0)}m × {(depth * 10).toFixed(0)}m ({(width * depth * 100).toFixed(0)}m²)
             </span>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                <span>Width (m)</span>
+                <span>W: {(width * 10).toFixed(0)}m ({width}t)</span>
                 <div className="flex gap-0.5">
                   <button
                     type="button"
                     onClick={() => handleNudgeSize(-1, 0)}
                     className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
-                    title="-1m Width"
+                    title="-10m (-1 tile)"
                   >
                     -1
                   </button>
@@ -423,7 +423,7 @@ export function ZoneInspectorPanel({
                     type="button"
                     onClick={() => handleNudgeSize(1, 0)}
                     className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
-                    title="+1m Width"
+                    title="+10m (+1 tile)"
                   >
                     +1
                   </button>
@@ -445,13 +445,13 @@ export function ZoneInspectorPanel({
             </div>
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
-                <span>Depth (m)</span>
+                <span>D: {(depth * 10).toFixed(0)}m ({depth}t)</span>
                 <div className="flex gap-0.5">
                   <button
                     type="button"
                     onClick={() => handleNudgeSize(0, -1)}
                     className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
-                    title="-1m Depth"
+                    title="-10m (-1 tile)"
                   >
                     -1
                   </button>
@@ -459,7 +459,7 @@ export function ZoneInspectorPanel({
                     type="button"
                     onClick={() => handleNudgeSize(0, 1)}
                     className="rounded px-1 bg-secondary hover:bg-accent text-[9px]"
-                    title="+1m Depth"
+                    title="+10m (+1 tile)"
                   >
                     +1
                   </button>

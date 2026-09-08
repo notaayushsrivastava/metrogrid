@@ -55,7 +55,7 @@ export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera, 
   return (
     <Canvas
       dpr={[1, 2]}
-      camera={{ position: [30, 28, 30], fov: cameraFov, near: 0.1, far: 400 }}
+      camera={{ position: [30, 28, 30], fov: cameraFov, near: 0.1, far: 2000 }}
       gl={{ antialias: true, alpha: true }}
       style={{ background: "transparent" }}
     >
@@ -75,7 +75,7 @@ export function CityCanvas3D({ tiles, activeTool, onSelect, presentationCamera, 
           dampingFactor={0.08}
           maxPolarAngle={Math.PI / 2.05}
           minDistance={5}
-          maxDistance={150}
+          maxDistance={1000}
         />
       )}
     </Canvas>

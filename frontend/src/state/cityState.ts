@@ -699,14 +699,15 @@ export function useCityPlanner(): CityPlanner {
 
       const hasNewSpatial = importedZones.length > 0 || importedRoads.length > 0;
 
-      // When vector spatial_roads are imported, prevent duplicate raster road blocks in state.tiles
+      // When vector spatial_roads or spatial_zones are imported, prevent duplicate raster blocks in state.tiles
       let targetTiles = merged;
-      if (importedRoads.length > 0) {
+      if (importedRoads.length > 0 || importedZones.length > 0) {
         targetTiles = new Map(stateRef.current.tiles);
         for (const [k, v] of merged.entries()) {
-          if (v.type !== 4 && v.type !== 40 && v.type !== 41 && v.type !== 42 && v.type !== 43) {
-            targetTiles.set(k, v);
-          }
+          const isRoad = v.type === 4 || v.type === 40 || v.type === 41 || v.type === 42 || v.type === 43;
+          if (importedRoads.length > 0 && isRoad) continue;
+          if (importedZones.length > 0 && !isRoad) continue;
+          targetTiles.set(k, v);
         }
       }
 

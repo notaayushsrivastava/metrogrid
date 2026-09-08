@@ -40,6 +40,7 @@ import {
   ZoomOut,
   RotateCcw,
   Magnet,
+  Activity,
 } from "lucide-react";
 import type { ToolId } from "../../types/city";
 import type { TerrainEditMode } from "../../types/spatial";
@@ -75,6 +76,8 @@ interface TopToolboxProps {
   onZoomOut?: () => void;
   showGridOverlay?: boolean;
   onToggleGridOverlay?: () => void;
+  showTraffic?: boolean;
+  onToggleTraffic?: () => void;
   snapEnabled?: boolean;
   onToggleSnap?: () => void;
 }
@@ -107,6 +110,8 @@ export function TopToolbox({
   onZoomOut,
   showGridOverlay = true,
   onToggleGridOverlay,
+  showTraffic = true,
+  onToggleTraffic,
   snapEnabled = true,
   onToggleSnap,
 }: TopToolboxProps) {
@@ -843,6 +848,30 @@ export function TopToolbox({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent>{showGridOverlay ? "Hide Structural Grid Lines" : "Show Structural Grid Lines"}</TooltipContent>
+                </Tooltip>
+              )}
+
+              {onToggleTraffic && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      type="button"
+                      onClick={onToggleTraffic}
+                      className={`flex items-center gap-1 rounded-lg px-2.5 py-1 text-xs font-semibold transition-colors border ${
+                        showTraffic
+                          ? "bg-emerald-500/15 border-emerald-500/40 text-emerald-300 font-bold"
+                          : "bg-secondary/60 border-border/80 text-muted-foreground hover:text-foreground hover:bg-accent"
+                      }`}
+                    >
+                      <Activity className={`size-3 ${showTraffic ? "text-emerald-400" : "text-muted-foreground"}`} />
+                      <span>Traffic</span>
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {showTraffic
+                      ? "Hide Traffic Flow Info & Disable Road Flashing Animation"
+                      : "Show Traffic Flow Info & Enable Road Flashing Animation"}
+                  </TooltipContent>
                 </Tooltip>
               )}
             </div>
