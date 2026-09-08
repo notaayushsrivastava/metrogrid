@@ -15,11 +15,6 @@
       "use": "@vercel/python"
     }
   ],
-  "functions": {
-    "api/index.py": {
-      "maxDuration": 60
-    }
-  },
   "routes": [
     { "src": "/api/(.*)", "dest": "api/index.py" },
     { "src": "/docs", "dest": "api/index.py" },
