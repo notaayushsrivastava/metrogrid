@@ -19,7 +19,7 @@ import type {
 } from "../types/city";
 
 const API_BASE: string =
-  (import.meta.env.VITE_API_BASE as string | undefined) ?? "http://localhost:8000";
+  (import.meta.env.VITE_API_BASE as string | undefined) ?? "";
 
 const REQUEST_TIMEOUT_MS = 8000;
 /**

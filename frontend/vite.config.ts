@@ -13,6 +13,23 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    // In dev the Vite server proxies /api to the local FastAPI backend so the
+    // frontend can use same-origin relative URLs (matching the deployed
+    // frontend+backend-on-one-domain behavior on Vercel).
+    proxy: {
+      "/api": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/docs": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/openapi.json": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+    },
   },
   test: {
     environment: "node",

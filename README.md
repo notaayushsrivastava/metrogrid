@@ -73,10 +73,16 @@ npm install        # once
 npm run dev        # http://localhost:5173
 ```
 
-Set `VITE_API_BASE` in the frontend env to point somewhere other than
-`http://localhost:8000`. Backend CORS origins default to the Vite dev ports
-(plus any `localhost`/`127.0.0.1` port via regex, so dev port drift is safe);
-override with `METROGRID_CORS_ORIGINS` (comma-separated).
+Set `VITE_API_BASE` in the frontend env to point somewhere other than the
+default. By default the frontend uses **same-origin relative** `/api/*` URLs and,
+in dev, the Vite server proxies `/api`, `/docs`, and `/openapi.json` to the
+backend at `http://localhost:8000` — so you get the exact same-origin behavior
+locally as the combined Vercel deployment. This means `npm run dev` + the
+backend on 8000 "just works" with no CORS concerns. Backend CORS origins default
+to the Vite dev ports (plus any `localhost`/`127.0.0.1` port via regex, so dev
+port drift is safe); override with `METROGRID_CORS_ORIGINS` (comma-separated).
+If you don't want the proxy, start Vite with the backend elsewhere and set
+`VITE_API_BASE` (which bypasses the proxy by calling that origin directly).
 
 GIS import env vars: `METROGRID_OVERPASS_URL` (primary Overpass endpoint),
 `METROGRID_GIS_TIMEOUT_S` (per-endpoint budget, default 60), and
@@ -187,3 +193,45 @@ Roads: `5` Local, `6` Transit, `7` Highway
       for spatial edits; v2 layout wrapper persists zones without a DB migration;
       Freeform toggle + Undo/Redo in the tool rail; 150 backend + 44 frontend tests
 - [ ] **Phase 6** — polish, a11y audit, demo seed city
+
+## Deploying to Vercel (combined frontend + backend)
+
+MetroGrid ships as a **single Vercel project** that serves both the React SPA and
+the FastAPI backend on one domain. The frontend talks to the backend through
+same-origin `/api/*` URLs, so there is no cross-origin CORS setup and no separate
+backend deployment.
+
+### How it's wired
+
+- `vercel.json` — routes `/api/*`, `/docs`, and `/openapi.json` to the
+  `api/index.py` Python function; every other path is served as the SPA
+  (`index.html`) for client-side routing (`/`, `/planner?t=1`, `/build`, …).
+- `api/index.py` — Vercel Python-runtime entrypoint; re-exports the FastAPI app
+  from `backend.app.main` (adds `backend/` to `sys.path`).
+- `main.py` (repo root) — identical re-export so Vercel's FastAPI auto-detect and
+  any root ASGI invocation resolve the same app.
+- `requirements.txt` (repo root) — backend deps installed by the Python runtime.
+- `frontend/vite.config.ts` — dev proxy so local `npm run dev` mirrors the
+  production same-origin layout.
+- CORS stays permissive **only** for localhost (see *Running*); same-origin
+  production requests need no CORS.
+
+### Deploy
+
+1. Push the repo to GitHub.
+2. In Vercel, **Import Project** → pick the repo → framework preset **Other**.
+   MetroGrid's `vercel.json` already defines the build (`@vercel/static-build`
+   for the frontend via `npm run build`, `@vercel/python` for the API), so the
+   default settings work.
+3. Set the **Environment Variables** the backend needs in the project settings:
+   `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (persistence + 3D asset
+   uploads), plus the optional GIS overrides
+   (`METROGRID_OVERPASS_URL`, `METROGRID_GIS_TIMEOUT_S`, `METROGRID_GIS_PROVIDER`).
+4. Deploy. The SPA loads at `/` and the API is live at `/api/health`.
+
+> ⚠️ **Serverless note:** the GIS importer calls OpenStreetMap's Overpass (up to
+> ~60 s upstream + mirrors) and model uploads can be up to 25 MB. Vercel
+> functions default to a 10 s/4.5 MB limit; `vercel.json` raises `maxDuration`
+> to 60 s, and you may need a **Pro/Enterprise plan** for the size and timeout
+> ceilings those operations require. Core planning/scoring (the main flow)
+> works on the free plan.

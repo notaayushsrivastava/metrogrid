@@ -1,0 +1,9 @@
+# MetroGrid backend dependencies — installed by Vercel's Python runtime
+# (project root requirements.txt) for the /api/* serverless function.
+# Mirrors backend/requirements.txt so a single deploy step pulls everything.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+supabase>=2.0
+python-multipart>=0.0.9
+python-dotenv>=1.0.0
