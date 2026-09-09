@@ -196,3 +196,29 @@ class TestV2RoadsTerrainPersistence:
         listing = client.get("/api/layouts").json()
         row = next(r for r in listing["layouts"] if r["id"] == layout_id)
         assert row["tile_count"] == 2
+
+
+class TestSupabaseArchive:
+    def test_supabase_save_and_load_blocked_with_archive_message(self, monkeypatch):
+        import app.api.layouts as layout_routes
+
+        layout_routes.store.url = "https://unit.test"
+        layout_routes.store.key = "unit-key"
+        assert layout_routes.store.storage == "supabase"
+
+        response = client.post(
+            "/api/layouts",
+            json={"name": "Archive Test", "grid_state": {"0,0": {"type": 1}}},
+        )
+        assert response.status_code == 403
+        assert (
+            "This project is now archived. Some Features are now read only. Thank you."
+            in response.json()["detail"]
+        )
+
+        load_res = client.get("/api/layouts/any-id")
+        assert load_res.status_code == 403
+        assert (
+            "This project is now archived. Some Features are now read only. Thank you."
+            in load_res.json()["detail"]
+        )

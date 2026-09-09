@@ -13,7 +13,6 @@ silently dropping the file.
 from __future__ import annotations
 
 import os
-import uuid
 
 from fastapi import APIRouter, File, UploadFile
 from fastapi import status as http
@@ -68,6 +67,11 @@ def _verify_type(filename: str, head: bytes) -> str:
     )
 
 
+ARCHIVE_MESSAGE = (
+    "This project is now archived. Some Features are now read only. Thank you."
+)
+
+
 @router.post("/api/assets/upload", response_model=AssetUploadResponse)
 async def upload_asset(file: UploadFile = File(...)) -> AssetUploadResponse:
     """Upload a 3D model to Supabase Storage (PRD §12.3)."""
@@ -82,24 +86,12 @@ async def upload_asset(file: UploadFile = File(...)) -> AssetUploadResponse:
             f"File exceeds the {config.ASSET_MAX_BYTES // (1024 * 1024)} MB limit.",
         )
 
-    content_type = _verify_type(file.filename or "model.glb", raw[:16])
+    _verify_type(file.filename or "model.glb", raw[:16])
 
-    client = _client()
-    # Deterministic, collision-resistant object key.
-    ext = ".glb" if content_type == "model/gltf-binary" else ".gltf"
-    object_key = f"{uuid.uuid4().hex}{ext}"
+    _client()  # verifies Supabase is configured; raises 503 if not
 
-    client.storage.from_(config.ASSET_BUCKET).upload(
-        object_key,
-        raw,
-        file_options={"content-type": content_type, "upsert": False},
-    )
-
-    model_url = client.storage.from_(config.ASSET_BUCKET).get_public_url(object_key)
-
-    return AssetUploadResponse(
-        filename=file.filename or object_key,
-        model_url=model_url,
-        size_bytes=len(raw),
-        content_type=content_type,
+    # Model uploads to Supabase are disabled because project is archived.
+    raise ApiError(
+        http.HTTP_403_FORBIDDEN,
+        ARCHIVE_MESSAGE,
     )

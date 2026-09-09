@@ -36,6 +36,7 @@ import { useCityPlanner, type ConnectionStatus } from "./state/cityState";
 import type { ToolId } from "./types/city";
 import type { ZoneType, TerrainEditMode } from "./types/spatial";
 import { LandingPage } from "./components/LandingPage/LandingPage";
+import { ProjectInfoPage } from "./components/ProjectInfo/ProjectInfoPage";
 import {
   OnboardingTutorial,
   shouldShowOnboarding,
@@ -102,8 +103,16 @@ const STATUS_COLOR: Record<ConnectionStatus, string> = {
 export default function App() {
   const { theme, toggleTheme } = useTheme();
 
-  if (window.location.pathname === "/") {
+  if (window.location.pathname === "/" || window.location.pathname === "/index.html") {
     return <LandingPage theme={theme} toggleTheme={toggleTheme} />;
+  }
+
+  if (
+    window.location.pathname === "/about" ||
+    window.location.pathname === "/info" ||
+    window.location.pathname === "/about.html"
+  ) {
+    return <ProjectInfoPage theme={theme} toggleTheme={toggleTheme} />;
   }
 
   const planner = useCityPlanner();
@@ -117,6 +126,7 @@ export default function App() {
   const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [customZoneOpen, setCustomZoneOpen] = useState(false);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [projectInfoOpen, setProjectInfoOpen] = useState(false);
 
   // Show the onboarding tutorial when the planner was entered from the
   // landing page (index URL) and the user has never completed it. Can also
@@ -126,6 +136,11 @@ export default function App() {
     if (onboardingCheckedRef.current) return;
     onboardingCheckedRef.current = true;
     const forced = new URLSearchParams(window.location.search).get("t") === "1";
+    // Clear one-time URL args (e.g. `/planner?t=1` → `/planner`) once read,
+    // without adding a history entry or reloading.
+    if (window.location.search) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.hash);
+    }
     let fromIndex = false;
     try {
       const referrer = new URL(document.referrer);
@@ -388,16 +403,17 @@ export default function App() {
             {/* Project Contextual Actions Menu */}
             <span data-tour="project" className="inline-flex">
               <ProjectMenu
-              planner={planner}
-              onOpenGis={() => setGisOpen(true)}
-              onOpenClear={() => setClearOpen(true)}
-              armedUrl={armedUrl}
-              armedName={armedName}
-              onArmModel={(url, name) => {
-                setArmedUrl(url);
-                setArmedName(name);
-                armModel(url);
-              }}
+                planner={planner}
+                onOpenGis={() => setGisOpen(true)}
+                onOpenClear={() => setClearOpen(true)}
+                onOpenAbout={() => setProjectInfoOpen(true)}
+                armedUrl={armedUrl}
+                armedName={armedName}
+                onArmModel={(url, name) => {
+                  setArmedUrl(url);
+                  setArmedName(name);
+                  armModel(url);
+                }}
               />
             </span>
 
@@ -721,6 +737,17 @@ export default function App() {
 
         {/* First-run onboarding tutorial (from landing page / palette) */}
         <OnboardingTutorial open={onboardingOpen} onFinish={finishOnboarding} />
+
+        {/* Project Info & Code2Create Page / Modal */}
+        {projectInfoOpen && (
+          <div className="fixed inset-0 z-50 overflow-y-auto bg-[#0c0004]">
+            <ProjectInfoPage
+              theme={theme}
+              toggleTheme={toggleTheme}
+              onClose={() => setProjectInfoOpen(false)}
+            />
+          </div>
+        )}
       </div>
     </TooltipProvider>
   );

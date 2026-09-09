@@ -64,6 +64,15 @@ const scenes: SceneDefinition[] = [
   { id: "complete", eyebrow: "METROGRID / 08", title: "The next city", emphasis: "starts here.", copy: "A precise workspace for planning, movement, data, and spatial decisions.", camera: { x: 0, y: 0, scale: 0.82, rotate: 0, tilt: 0 }, annotation: "FULL PLATFORM", metric: "complete" },
 ];
 
+/** Single source of truth for header nav — previously pasted twice. */
+const NAV_LINKS: ReadonlyArray<{ label: string; href: string }> = [
+  { label: "Planner", href: "/planner?t=1" },
+  { label: "Simulation", href: "#story" },
+  { label: "GIS", href: "#story" },
+  { label: "3D", href: "/planner?t=1" },
+  { label: "About & C2C", href: "/about" },
+];
+
 function clamp(value: number, min = 0, max = 1) {
   return Math.min(max, Math.max(min, value));
 }
@@ -258,9 +267,27 @@ export function LandingPage({ theme, toggleTheme }: LandingPageProps) {
       <header className="narrative-nav">
         <a className="landing-brand" href="/" aria-label="MetroGrid home"><span className="brand-mark"><Grid3X3 size={17} strokeWidth={1.8} /></span><span>MetroGrid</span></a>
         <nav className={menuOpen ? "narrative-links is-open" : "narrative-links"} aria-label="Primary navigation">
-          <a href="/planner?t=1" onClick={() => setMenuOpen(false)}>Planner</a><a href="#story" onClick={() => setMenuOpen(false)}>Simulation</a><a href="#story" onClick={() => setMenuOpen(false)}>GIS</a><a href="/planner?t=1" onClick={() => setMenuOpen(false)}>3D</a>
+          {NAV_LINKS.map((link) => (
+            <a key={link.label} href={link.href} onClick={() => setMenuOpen(false)}>{link.label}</a>
+          ))}
         </nav>
-        <div className="narrative-actions"><button className="icon-action" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button><a href="/planner?t=1" className="nav-cta">Open planner <ArrowUpRight size={15} /></a><button className="menu-action" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button></div>
+        <div className="narrative-actions">
+          <a
+            href="https://github.com/notaayushsrivastava/metrogrid"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="icon-action"
+            aria-label="MetroGrid GitHub Repository"
+            title="GitHub: notaayushsrivastava/metrogrid"
+          >
+            <svg className="size-4 fill-current" viewBox="0 0 24 24">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+          </a>
+          <button className="icon-action" onClick={toggleTheme} aria-label={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}>{theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}</button>
+          <a href="/planner?t=1" className="nav-cta">Open planner <ArrowUpRight size={15} /></a>
+          <button className="menu-action" onClick={() => setMenuOpen((open) => !open)} aria-expanded={menuOpen} aria-label={menuOpen ? "Close navigation" : "Open navigation"}>{menuOpen ? <X size={20} /> : <Menu size={20} />}</button>
+        </div>
       </header>
       <main id="story" className="narrative-story">
         <div className="story-stage">
@@ -268,9 +295,21 @@ export function LandingPage({ theme, toggleTheme }: LandingPageProps) {
           <div className="scene-copy-layer">{scenes.map((item, index) => <SceneNarrative key={item.id} scene={item} index={index} active={activeIndex === index} progress={reduced ? (index === 0 ? 1 : 0) : progress} />)}</div>
           <div className="story-progress" aria-label={`Story progress: ${Math.round(progress * 100)} percent`}><span style={{ height: `${Math.max(3, progress * 100)}%` }} /><i>{String(activeIndex + 1).padStart(2, "0")}</i></div>
         </div>
-        <section className="final-narrative"><div className="eyebrow"><span className="eyebrow-line" /> METROGRID / 09</div><h2>Build the city<br /><em>you can imagine.</em></h2><p>Explore MetroGrid and start designing.</p><div className="final-actions"><a href="/planner?t=1" className="primary-cta">Open planner <ArrowUpRight size={17} /></a><a href="#story" className="text-cta">Explore documentation <ChevronRight size={16} /></a></div></section>
+        <section className="final-narrative">
+          <div className="eyebrow"><span className="eyebrow-line" /> METROGRID / 09</div>
+          <h2>Build the city<br /><em>you can imagine.</em></h2>
+          <p>Explore MetroGrid and start designing.</p>
+          <div className="final-actions">
+            <a href="/planner?t=1" className="primary-cta">Open planner <ArrowUpRight size={17} /></a>
+            <a href="/about" className="text-cta">Project info & C2C <ChevronRight size={16} /></a>
+          </div>
+        </section>
       </main>
-      <footer className="landing-footer narrative-footer"><a className="landing-brand" href="/"><span className="brand-mark"><Grid3X3 size={17} /></span><span>MetroGrid</span></a><span>Urban planning, simulated.</span><small>© 2026 MetroGrid Systems</small></footer>
+      <footer className="landing-footer narrative-footer">
+        <a className="landing-brand" href="/"><span className="brand-mark"><Grid3X3 size={17} /></span><span>MetroGrid</span></a>
+        <span>Urban planning, simulated.</span>
+        <small>© 2026 Aayush Srivastava. All rights reserved.</small>
+      </footer>
     </div>
   );
 }

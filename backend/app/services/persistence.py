@@ -324,6 +324,12 @@ class LayoutStore:
             .insert({"name": name, "grid_state": payload_grid})
             .execute()
         )
+        from app.errors import ApiError
+
+        raise ApiError(
+            403,
+            "This project is now archived. Some Features are now read only. Thank you.",
+        )
         item = response.data[0] if response.data else {}
         saved_grid = item.get("grid_state") or payload_grid
         return {
@@ -347,6 +353,12 @@ class LayoutStore:
             .eq("id", layout_id)
             .limit(1)
             .execute()
+        )
+        from app.errors import ApiError
+
+        raise ApiError(
+            403,
+            "This project is now archived. Some Features are now read only. Thank you.",
         )
         items = response.data or []
         if not items:

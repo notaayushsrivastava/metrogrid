@@ -6,9 +6,9 @@
  */
 
 import { useRef, useState } from "react";
-import { Box, Upload, CheckCircle2, AlertTriangle, Loader2 } from "lucide-react";
+import { Box, Upload, CheckCircle2, AlertTriangle } from "lucide-react";
 
-import { uploadAsset } from "../../services/api";
+import { ARCHIVE_MESSAGE } from "../../services/api";
 import { Button } from "../ui/button";
 
 interface ModelUploadProps {
@@ -24,24 +24,14 @@ export function ModelUpload({ armedUrl, armedName, onArm }: ModelUploadProps) {
   const [message, setMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const onFile = async (file: File) => {
-    setPhase("uploading");
-    setMessage(null);
-    try {
-      const result = await uploadAsset(file);
-      onArm(result.model_url, result.filename);
-      setPhase("success");
-      setMessage(`Armed "${result.filename}" (${(result.size_bytes / 1024).toFixed(0)} KB)`);
-    } catch (error) {
-      setPhase("error");
-      setMessage(error instanceof Error ? error.message : "Upload failed.");
-    }
+  const onFile = async (_file: File) => {
+    setPhase("error");
+    setMessage(ARCHIVE_MESSAGE);
   };
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) void onFile(file);
-    // Reset so re-selecting the same file re-triggers change.
     event.target.value = "";
   };
 
@@ -51,11 +41,17 @@ export function ModelUpload({ armedUrl, armedName, onArm }: ModelUploadProps) {
         3D Model
       </p>
 
+      <div className="rounded border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-300 flex items-start gap-1.5">
+        <AlertTriangle className="size-3.5 shrink-0 text-amber-400 mt-0.5" />
+        <span>{ARCHIVE_MESSAGE}</span>
+      </div>
+
       <input
         ref={inputRef}
         type="file"
         accept=".glb,.gltf"
         className="hidden"
+        disabled={true}
         onChange={handleChange}
         aria-label="Upload a 3D model"
       />
@@ -64,16 +60,12 @@ export function ModelUpload({ armedUrl, armedName, onArm }: ModelUploadProps) {
         type="button"
         variant="secondary"
         size="sm"
-        disabled={phase === "uploading"}
-        onClick={() => inputRef.current?.click()}
-        className="w-full justify-start gap-2"
+        disabled={true}
+        title={ARCHIVE_MESSAGE}
+        className="w-full justify-start gap-2 opacity-60 cursor-not-allowed"
       >
-        {phase === "uploading" ? (
-          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
-        ) : (
-          <Upload className="size-4" aria-hidden="true" />
-        )}
-        {phase === "uploading" ? "Uploading…" : "Upload model"}
+        <Upload className="size-4" aria-hidden="true" />
+        <span>Upload Disabled (Archived)</span>
       </Button>
 
       {phase === "success" && armedName && (

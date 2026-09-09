@@ -25,10 +25,11 @@ import {
   Loader2,
   CheckCircle2,
   AlertTriangle,
+  Info,
 } from "lucide-react";
 import type { CityPlanner } from "../../state/cityState";
 import { exportArchitecturalBlueprint } from "../../utils/blueprintExport";
-import { uploadAsset } from "../../services/api";
+import { uploadAsset, ARCHIVE_MESSAGE } from "../../services/api";
 import { Button } from "../ui/button";
 import { Input } from "../ui/input";
 
@@ -36,6 +37,7 @@ interface ProjectMenuProps {
   planner: CityPlanner;
   onOpenGis: () => void;
   onOpenClear: () => void;
+  onOpenAbout?: () => void;
   armedUrl: string | null;
   armedName: string | null;
   onArmModel: (url: string | null, name: string | null) => void;
@@ -45,6 +47,7 @@ export function ProjectMenu({
   planner,
   onOpenGis,
   onOpenClear,
+  onOpenAbout,
   armedUrl,
   armedName,
   onArmModel,
@@ -79,7 +82,13 @@ export function ProjectMenu({
     }
   }, [menuOpen]);
 
+  const isArchived = planner.state.layoutStorage === "supabase";
+
   const handleSave = async () => {
+    if (isArchived) {
+      setSaveNotice(ARCHIVE_MESSAGE);
+      return;
+    }
     const trimmed = saveName.trim();
     if (!trimmed) {
       setSaveNotice("Enter a name to save this layout.");
@@ -103,6 +112,10 @@ export function ProjectMenu({
   };
 
   const handleLoad = async (id: string) => {
+    if (isArchived) {
+      alert(ARCHIVE_MESSAGE);
+      return;
+    }
     try {
       await planner.loadCity(id);
       setLoadModalOpen(false);
@@ -226,6 +239,37 @@ export function ProjectMenu({
             type="button"
             onClick={() => {
               setMenuOpen(false);
+              if (onOpenAbout) {
+                onOpenAbout();
+              } else {
+                window.location.href = "/about";
+              }
+            }}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left font-medium text-pink-400 hover:bg-accent hover:text-pink-300 transition-colors"
+          >
+            <Info className="size-3.5 text-pink-400" />
+            <span>About Project & C2C</span>
+          </button>
+
+          <a
+            href="https://github.com/notaayushsrivastava/metrogrid"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setMenuOpen(false)}
+            className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left font-medium text-muted-foreground hover:bg-accent hover:text-foreground transition-colors"
+          >
+            <svg className="size-3.5 fill-current" viewBox="0 0 24 24">
+              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z" />
+            </svg>
+            <span>GitHub Repository</span>
+          </a>
+
+          <div className="my-1 h-[1px] bg-border/60" />
+
+          <button
+            type="button"
+            onClick={() => {
+              setMenuOpen(false);
               onOpenClear();
             }}
             className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left font-semibold text-destructive hover:bg-destructive/15 transition-colors"
@@ -255,6 +299,15 @@ export function ProjectMenu({
             </div>
 
             <div className="py-4 space-y-3">
+              {isArchived && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 flex items-start gap-2.5">
+                  <AlertTriangle className="size-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-amber-300">Archived Status</span>
+                    <span>{ARCHIVE_MESSAGE}</span>
+                  </div>
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">
                 Save your current city plan, roads, zones, and 3D terrain elevation.
               </p>
@@ -263,11 +316,12 @@ export function ProjectMenu({
                 placeholder="Layout name (e.g. Neo Tokyo Central)…"
                 value={saveName}
                 onChange={(e) => setSaveName(e.target.value)}
+                disabled={isArchived}
                 onKeyDown={(e) => {
-                  if (e.key === "Enter") void handleSave();
+                  if (e.key === "Enter" && !isArchived) void handleSave();
                 }}
                 className="font-mono text-xs"
-                autoFocus
+                autoFocus={!isArchived}
               />
               {saveNotice && (
                 <p className="text-xs font-mono text-emerald-400">{saveNotice}</p>
@@ -285,11 +339,12 @@ export function ProjectMenu({
               <Button
                 size="sm"
                 onClick={() => void handleSave()}
-                disabled={saveBusy}
+                disabled={saveBusy || isArchived}
+                title={isArchived ? ARCHIVE_MESSAGE : undefined}
                 className="gap-1.5"
               >
                 {saveBusy && <Loader2 className="size-3 animate-spin" />}
-                <span>Save</span>
+                <span>{isArchived ? "Archived (Read Only)" : "Save"}</span>
               </Button>
             </div>
           </div>
@@ -315,6 +370,15 @@ export function ProjectMenu({
             </div>
 
             <div className="py-4 max-h-64 overflow-y-auto space-y-1.5">
+              {isArchived && (
+                <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 flex items-start gap-2.5 mb-2">
+                  <AlertTriangle className="size-4 shrink-0 text-amber-400 mt-0.5" />
+                  <div>
+                    <span className="font-bold block text-amber-300">Archived Status</span>
+                    <span>{ARCHIVE_MESSAGE}</span>
+                  </div>
+                </div>
+              )}
               {planner.state.layouts.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-6">
                   No saved layouts found. Save a layout first to load it here.
@@ -373,8 +437,16 @@ export function ProjectMenu({
             </div>
 
             <div className="py-4 space-y-3">
+              <div className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-200 flex items-start gap-2.5">
+                <AlertTriangle className="size-4 shrink-0 text-amber-400 mt-0.5" />
+                <div>
+                  <span className="font-bold block text-amber-300">Uploads Disabled</span>
+                  <span>{ARCHIVE_MESSAGE}</span>
+                </div>
+              </div>
               <p className="text-xs text-muted-foreground">
                 Upload a custom `.glb` or `.gltf` 3D architectural model to arm subsequent placements.
+                Custom model uploads to Supabase are disabled in archive mode.
               </p>
 
               <input
@@ -382,6 +454,7 @@ export function ProjectMenu({
                 type="file"
                 accept=".glb,.gltf"
                 className="hidden"
+                disabled={true}
                 onChange={handleFileUpload}
               />
 
@@ -389,16 +462,12 @@ export function ProjectMenu({
                 type="button"
                 variant="secondary"
                 size="sm"
-                disabled={uploadPhase === "uploading"}
-                onClick={() => fileInputRef.current?.click()}
-                className="w-full justify-center gap-2"
+                disabled={true}
+                title={ARCHIVE_MESSAGE}
+                className="w-full justify-center gap-2 opacity-60 cursor-not-allowed"
               >
-                {uploadPhase === "uploading" ? (
-                  <Loader2 className="size-4 animate-spin" />
-                ) : (
-                  <Upload className="size-4" />
-                )}
-                <span>{uploadPhase === "uploading" ? "Uploading Model…" : "Select .glb / .gltf File"}</span>
+                <Upload className="size-4" />
+                <span>Upload Disabled (Archived)</span>
               </Button>
 
               {uploadPhase === "success" && (

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -99,24 +98,22 @@ class TestUploadValidation:
 
 
 class TestUploadSuccess:
-    def test_uploads_valid_glb(self, monkeypatch):
+    def test_uploads_valid_glb_blocked_by_archive(self, monkeypatch):
         monkeypatch.setenv("SUPABASE_URL", "https://unit.test")
         monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "unit-key")
-        mock_supabase, storage = _mock_client("model/gltf-binary")
+        mock_supabase, _ = _mock_client("model/gltf-binary")
         with patch.object(supabase, "create_client", return_value=mock_supabase):
             response = client.post(
                 "/api/assets/upload",
                 files={"file": ("building.glb", _glb_bytes(), "model/gltf-binary")},
             )
-        assert response.status_code == 200
-        body = response.json()
-        assert body["filename"] == "building.glb"
-        assert body["content_type"] == "model/gltf-binary"
-        assert body["size_bytes"] == len(_glb_bytes())
-        assert body["model_url"] == "https://unit.test/models/x.glb"
-        storage.upload.assert_called_once()
+        assert response.status_code == 403
+        assert (
+            "This project is now archived. Some Features are now read only. Thank you."
+            in response.json()["detail"]
+        )
 
-    def test_uploads_valid_gltf(self, monkeypatch):
+    def test_uploads_valid_gltf_blocked_by_archive(self, monkeypatch):
         monkeypatch.setenv("SUPABASE_URL", "https://unit.test")
         monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "unit-key")
         mock_supabase, _ = _mock_client("model/gltf+json")
@@ -125,8 +122,11 @@ class TestUploadSuccess:
                 "/api/assets/upload",
                 files={"file": ("scene.gltf", _gltf_bytes(), "model/gltf+json")},
             )
-        assert response.status_code == 200
-        assert response.json()["content_type"] == "model/gltf+json"
+        assert response.status_code == 403
+        assert (
+            "This project is now archived. Some Features are now read only. Thank you."
+            in response.json()["detail"]
+        )
 
 
 class TestUploadDegradation:

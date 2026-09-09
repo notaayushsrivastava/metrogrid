@@ -7,8 +7,10 @@
  */
 
 import { useEffect, useState } from "react";
+import { AlertTriangle } from "lucide-react";
 import type { CityPlanner } from "../../state/cityState";
 import type { LayoutSummary } from "../../types/city";
+import { ARCHIVE_MESSAGE } from "../../services/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,7 +33,13 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [planner.refreshLayouts]);
 
+  const isArchived = state.layoutStorage === "supabase";
+
   const onSave = async () => {
+    if (isArchived) {
+      setNotice(ARCHIVE_MESSAGE);
+      return;
+    }
     const trimmed = name.trim();
     if (!trimmed) {
       setNotice("Enter a name to save this layout.");
@@ -51,6 +59,10 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
   };
 
   const onLoad = async (layout: LayoutSummary) => {
+    if (isArchived) {
+      setNotice(ARCHIVE_MESSAGE);
+      return;
+    }
     setBusy(true);
     setNotice(null);
     try {
@@ -74,6 +86,13 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
         Layouts
       </p>
 
+      {isArchived && (
+        <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-2 text-[11px] text-amber-300 flex items-start gap-1.5">
+          <AlertTriangle className="size-3.5 shrink-0 text-amber-400 mt-0.5" />
+          <span>{ARCHIVE_MESSAGE}</span>
+        </div>
+      )}
+
       <div className="flex gap-1">
         <Input
           type="text"
@@ -81,9 +100,10 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
           placeholder="Layout name…"
           autoComplete="off"
           spellCheck={false}
+          disabled={isArchived}
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") void onSave();
+            if (e.key === "Enter" && !isArchived) void onSave();
           }}
           className="h-7 min-w-0 flex-1 font-mono text-xs"
           aria-label="Layout name"
@@ -93,9 +113,10 @@ export function SaveLoadPanel({ planner }: SaveLoadPanelProps) {
           size="sm"
           variant="secondary"
           onClick={() => void onSave()}
-          disabled={busy}
+          disabled={busy || isArchived}
+          title={isArchived ? ARCHIVE_MESSAGE : undefined}
         >
-          {busy ? "Saving…" : "Save"}
+          {busy ? "Saving…" : isArchived ? "Archived" : "Save"}
         </Button>
       </div>
 

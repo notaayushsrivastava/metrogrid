@@ -21,6 +21,11 @@ router = APIRouter(prefix="/api/layouts", tags=["layouts"])
 store = LayoutStore()
 
 
+ARCHIVE_MESSAGE = (
+    "This project is now archived. Some Features are now read only. Thank you."
+)
+
+
 @router.get("", response_model=LayoutListResponse)
 async def list_layouts() -> LayoutListResponse:
     """List saved layouts (summaries, no grid payloads)."""
@@ -30,6 +35,8 @@ async def list_layouts() -> LayoutListResponse:
 @router.post("", response_model=LayoutDetail, status_code=201)
 async def save_layout(payload: SaveLayoutRequest) -> LayoutDetail:
     """Save the current sparse tile map under a sanitized name."""
+    if store.storage == "supabase":
+        raise ApiError(403, ARCHIVE_MESSAGE)
     try:
         validate_grid_state_payload(payload.grid_state)
         row = store.save_layout(payload.name, payload.grid_state)
@@ -48,11 +55,11 @@ async def save_layout(payload: SaveLayoutRequest) -> LayoutDetail:
 @router.get("/{layout_id}", response_model=LayoutDetail)
 async def load_layout(layout_id: str) -> LayoutDetail:
     """Fetch one saved layout with its full grid_state."""
+    if store.storage == "supabase":
+        raise ApiError(403, ARCHIVE_MESSAGE)
     try:
         row = store.load_layout(layout_id)
     except KeyError as exc:
-        from app.main import ApiError
-
         raise ApiError(404, "Layout not found") from exc
     return LayoutDetail(
         id=row["id"],

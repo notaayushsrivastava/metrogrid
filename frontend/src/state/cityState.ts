@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useReducer, useRef } from "react";
 import {
+  ARCHIVE_MESSAGE,
   calculateScores,
   importGisArea,
   listLayouts,
@@ -595,6 +596,9 @@ export function useCityPlanner(): CityPlanner {
   const saveCity = useCallback(
     async (name: string) => {
       const current = stateRef.current;
+      if (current.layoutStorage === "supabase") {
+        throw new Error(ARCHIVE_MESSAGE);
+      }
       const tilesPayload: Record<string, { type: number }> = {};
       current.tiles.forEach((tile, key) => {
         tilesPayload[key] = { type: tile.type };
@@ -625,6 +629,9 @@ export function useCityPlanner(): CityPlanner {
   );
 
   const loadCity = useCallback(async (layoutId: string) => {
+    if (stateRef.current.layoutStorage === "supabase") {
+      throw new Error(ARCHIVE_MESSAGE);
+    }
     const detail = await loadLayout(layoutId);
     // Detect the v2 wrapper (tiles + zones + roads + terrain) vs the legacy flat map.
     const raw = detail.grid_state as unknown;
