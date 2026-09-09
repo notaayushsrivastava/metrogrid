@@ -11,6 +11,18 @@
       "entrypoint": "app.main:app"
     }
   },
+  "redirects": [
+    {
+      "source": "/planner",
+      "destination": "/planner.html",
+      "permanent": false
+    },
+    {
+      "source": "/about",
+      "destination": "/about.html",
+      "permanent": false
+    }
+  ],
   "rewrites": [
     {
       "source": "/api/(.*)",
