@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && vite build && node -e \"require('fs').copyFileSync('dist/index.html', 'dist/planner.html')\"",
+    "build": "tsc --noEmit && vite build && node -e \"const fs=require('fs'); fs.copyFileSync('dist/index.html','dist/planner.html'); fs.copyFileSync('dist/index.html','dist/about.html')\"",
     "preview": "vite preview",
     "test": "vitest run"
   },
